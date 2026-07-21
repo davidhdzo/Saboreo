@@ -108,7 +108,7 @@
   .cuisines .clear:hover{color:var(--txt)}
 
   /* side panel */
-  .panel{position:absolute;top:0;right:0;bottom:0;width:min(420px,92vw);z-index:800;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(102%);transition:transform .35s cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column}
+  .panel{position:absolute;top:0;right:0;bottom:0;width:100%;z-index:800;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(102%);transition:transform .35s cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column}
   .panel.open{transform:translateX(0)}
   .panel-head{padding:calc(20px + env(safe-area-inset-top)) 22px 16px;border-bottom:1px solid var(--line);position:relative;background:linear-gradient(135deg,rgba(255,122,26,.06),rgba(31,174,90,.06))}
   .panel-head .cat{font-size:10px;letter-spacing:.22em;color:var(--orange);text-transform:uppercase;font-weight:800}
@@ -118,7 +118,7 @@
   .close:hover{color:var(--txt);border-color:var(--orange)}
   .favstar{position:absolute;top:18px;right:58px;width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:15px;display:grid;place-items:center;transition:.2s}
   .favstar.on{background:var(--orange);border-color:var(--orange);color:#fff}
-  .panel-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 22px calc(28px + env(safe-area-inset-bottom))}
+  .panel-body{flex:1;position:relative;overflow:hidden;padding:0}
   .panel-body::-webkit-scrollbar{width:8px}.panel-body::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
   .section-title{font-size:11px;letter-spacing:.16em;color:var(--txt-dim);text-transform:uppercase;margin:22px 0 12px;font-weight:700}
   .dish{background:var(--surface-2);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:14px}
@@ -220,6 +220,35 @@
   .listitem .thumb.bigscore{background:var(--green);color:#fff;font-weight:800;font-size:17px}
   .stat{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border:1px solid var(--line);border-radius:13px;margin-bottom:10px;font-size:14px}
   .stat b{font-size:20px;font-weight:800;color:var(--orange-d)}
+
+  /* restaurant panel tabs */
+  .tabs{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);flex-shrink:0}
+  .tabs .tab{flex:1;padding:11px;border:1px solid var(--line);background:#fff;border-radius:12px;font-size:13px;font-weight:700;color:var(--txt-dim);cursor:pointer;font-family:inherit;transition:.16s}
+  .tabs .tab.on{background:linear-gradient(135deg,var(--orange),var(--orange-d));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(255,122,26,.28)}
+  .tabpane{position:absolute;inset:0}
+  .tabpane[hidden]{display:none}
+  .pane-add{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 22px calc(28px + env(safe-area-inset-bottom))}
+
+  /* tiktok-style dish reel */
+  .reel{display:flex;height:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;background:#0c0d0b}
+  .reel::-webkit-scrollbar{display:none}
+  .reel-card{position:relative;flex:0 0 100%;width:100%;height:100%;scroll-snap-align:center;background:#0c0d0b;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .reel-card img,.reel-card video{width:100%;height:100%;object-fit:cover;display:block}
+  .reel-card.novid{background:linear-gradient(160deg,#2c2521,#151210)}
+  .reel-card .bigemoji{font-size:84px;opacity:.9}
+  .reel-del{position:absolute;top:14px;right:14px;z-index:4;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);color:#fff;border:none;width:36px;height:36px;border-radius:50%;font-size:15px;cursor:pointer;display:grid;place-items:center}
+  .reel-top{position:absolute;top:0;left:0;right:0;z-index:3;padding:18px 20px 46px;background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,0));color:#fff;pointer-events:none}
+  .reel-count{display:inline-block;font-size:11px;font-weight:700;background:rgba(0,0,0,.4);padding:3px 10px;border-radius:20px;margin-bottom:9px}
+  .reel-top h3{margin:0;font-size:23px;line-height:1.15;font-weight:800;text-shadow:0 2px 10px rgba(0,0,0,.55)}
+  .reel-bot{position:absolute;bottom:0;left:0;right:0;z-index:3;padding:46px 20px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(0deg,rgba(0,0,0,.82),rgba(0,0,0,0));color:#fff}
+  .reel-bot .row1{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+  .reel-score{background:var(--green);color:#fff;font-weight:800;font-size:15px;padding:3px 13px;border-radius:20px}
+  .reel-tag{background:rgba(255,255,255,.18);color:#fff;font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;border:1px solid rgba(255,255,255,.28)}
+  .reel-desc{font-size:13.5px;line-height:1.5;color:rgba(255,255,255,.92);margin:0}
+  .reel-emptybox{margin:auto;text-align:center;color:#fff;padding:30px}
+  .reel-emptybox .bigemoji{font-size:56px;margin-bottom:14px;opacity:.9}
+  .reel-emptybox p{color:rgba(255,255,255,.8);font-size:14px;margin:0 0 18px}
+  .reel-addbtn{background:linear-gradient(135deg,var(--orange),var(--orange-d));color:#fff;border:none;border-radius:12px;padding:12px 20px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
 </style>
 </head>
 <body>
@@ -276,10 +305,13 @@
     <div class="addr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span id="pAddr">Madrid</span></div>
     <div class="scores empty-sc" id="pScores"></div>
   </div>
+  <div class="tabs">
+    <button class="tab on" data-tab="dishes">🍽️ Mis platos</button>
+    <button class="tab" data-tab="add">➕ Añadir plato</button>
+  </div>
   <div class="panel-body">
-    <div class="section-title">Mis platos</div>
-    <div id="dishList"></div>
-    <div class="section-title">Añadir un plato</div>
+    <div class="tabpane pane-dishes" id="paneDishes"><div class="reel" id="dishReel"></div></div>
+    <div class="tabpane pane-add" id="paneAdd" hidden>
     <div class="form">
       <div class="addcard">
         <div class="addcol left">
@@ -311,6 +343,7 @@
         </div>
       </div>
       <button class="save" id="saveDish" disabled>Guardar plato</button>
+    </div>
     </div>
   </div>
 </aside>
@@ -398,7 +431,7 @@ function addMarker(p,label){
   const m=L.marker([p.lat,p.lng],{icon:makeIcon(p),keyboard:false});
   m.on('click',e=>{L.DomEvent.stopPropagation(e);openPanel(p.id);});
   const hl=p.id===highlightId;
-  if(label)m.bindTooltip(p.name,{permanent:true,direction:'top',className:'lbl'+(hl?' is-hl':(hasDishes?' is-saved':'')),offset:[0,hl?-16:-7]});
+  if(label)m.bindTooltip(p.name,{permanent:true,interactive:true,direction:'top',className:'lbl'+(hl?' is-hl':(hasDishes?' is-saved':'')),offset:[0,hl?-16:-7]});
   m.addTo(markerLayer);markers.set(p.id,m);
 }
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
@@ -454,7 +487,7 @@ function openPanel(id){
   document.getElementById('pAddr').textContent=p.addr||'Madrid';
   const fs=document.getElementById('favStar');
   fs.classList.toggle('on',favorites.has(id));fs.textContent=favorites.has(id)?'★':'☆';
-  clearForm();renderDishes(id);
+  clearForm();renderDishes(id);switchTab('dishes');
   document.getElementById('panel').classList.add('open');
   closeOverlay();map.panTo([p.lat,p.lng]);
 }
@@ -489,22 +522,37 @@ function renderScores(id){
   box.innerHTML=cell('global',s.global,'Global')+cell('',s.comida,'🍽️ Comida')+cell('',s.postre,'🍰 Postre');
 }
 function renderDishes(id){
-  const list=document.getElementById('dishList'),rec=saved.get(id),dishes=rec?rec.dishes:[];
+  const reel=document.getElementById('dishReel'),rec=saved.get(id),dishes=rec?rec.dishes:[];
   renderScores(id);
-  if(!dishes.length){list.innerHTML=`<div class="empty">Todavía no has añadido platos aquí.<br>Sube tu primera foto abajo 👇</div>`;return;}
-  list.innerHTML='';
+  if(!dishes.length){
+    reel.innerHTML=`<div class="reel-card novid"><div class="reel-emptybox"><div class="bigemoji">🍽️</div><p>Todavía no has añadido platos aquí.</p><button class="reel-addbtn" id="reelAdd">➕ Añadir tu primer plato</button></div></div>`;
+    const ra=document.getElementById('reelAdd');if(ra)ra.onclick=()=>switchTab('add');
+    return;
+  }
+  const total=dishes.length;
+  reel.innerHTML='';
   dishes.forEach((d,i)=>{
-    const el=document.createElement('div');el.className='dish';let media='';
+    const card=document.createElement('div');card.className='reel-card';let media='';
     if(d.blob){const url=URL.createObjectURL(d.blob);
       media=d.mtype&&d.mtype.startsWith('video')
-        ?`<div class="media"><span class="badge">▶ Vídeo</span><video src="${url}" muted loop playsinline onmouseover="this.play()" onmouseout="this.pause()"></video></div>`
-        :`<div class="media"><span class="badge">Foto</span><img src="${url}"/></div>`;}
-    const score=typeof d.rating==='number'?`<span class="score">${d.rating.toFixed(1)}</span>`:'';
-    const tag=`<span class="tag">${d.course==='postre'?'🍰 Postre':'🍽️ Comida'}</span>`;
-    el.innerHTML=`${media}<div class="info"><div class="dhead"><h4>${esc(d.name)}</h4>${score}</div><div class="tags">${tag}</div>${d.desc?`<p>${esc(d.desc)}</p>`:''}<button class="del" data-i="${i}">Eliminar</button></div>`;
-    list.appendChild(el);
+        ?`<video src="${url}" muted loop playsinline autoplay></video>`
+        :`<img src="${url}"/>`;
+    }else{card.classList.add('novid');media=`<div class="bigemoji">${d.course==='postre'?'🍰':'🍽️'}</div>`;}
+    const score=typeof d.rating==='number'?`<span class="reel-score">${d.rating.toFixed(1)}/10</span>`:'';
+    const tag=`<span class="reel-tag">${d.course==='postre'?'🍰 Postre':'🍽️ Comida'}</span>`;
+    card.innerHTML=`${media}`+
+      `<button class="reel-del" data-i="${i}" title="Eliminar">🗑</button>`+
+      `<div class="reel-top"><span class="reel-count">${i+1} / ${total}</span><h3>${esc(d.name)}</h3></div>`+
+      `<div class="reel-bot"><div class="row1">${score}${tag}</div>${d.desc?`<p class="reel-desc">${esc(d.desc)}</p>`:''}</div>`;
+    reel.appendChild(card);
   });
-  list.querySelectorAll('.del').forEach(b=>b.onclick=()=>deleteDish(id,+b.dataset.i));
+  reel.querySelectorAll('.reel-del').forEach(b=>b.onclick=()=>deleteDish(id,+b.dataset.i));
+  reel.scrollLeft=0;
+}
+function switchTab(t){
+  document.querySelectorAll('.panel .tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  document.getElementById('paneDishes').hidden=(t!=='dishes');
+  document.getElementById('paneAdd').hidden=(t!=='add');
 }
 function clearForm(){
   document.getElementById('dName').value='';document.getElementById('dDesc').value='';pendingMedia=null;
@@ -523,7 +571,7 @@ async function saveDish(){
   const rating=parseFloat(document.getElementById('dRate').value);
   const dish={name,desc,course:pendingCourse,rating,ts:Date.now()};if(pendingMedia){dish.blob=pendingMedia.blob;dish.mtype=pendingMedia.type;}
   rec.dishes.push(dish);await DB.put(rec);saved.set(current,rec);
-  renderDishes(current);refreshVisible();clearForm();toast('Plato guardado ✓');
+  renderDishes(current);refreshVisible();clearForm();switchTab('dishes');toast('Plato guardado ✓');
 }
 async function deleteDish(id,i){const rec=saved.get(id);if(!rec)return;rec.dishes.splice(i,1);await DB.put(rec);renderDishes(id);refreshVisible();toast('Plato eliminado');}
 
@@ -764,6 +812,7 @@ function wire(){
   document.getElementById('closeSheet').onclick=closeOverlay;
   document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeOverlay();};
   document.getElementById('importFile').onchange=e=>{const f=e.target.files[0];if(f)importData(f);e.target.value='';};
+  document.querySelectorAll('.panel .tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 }
 
 async function boot(){
