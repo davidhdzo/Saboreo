@@ -172,6 +172,10 @@
   .pin.hl:after{content:"";position:absolute;inset:-11px;border-radius:50%;border:3px solid var(--blue);animation:hlpulse 1.5s .75s infinite ease-out}
   @keyframes hlpulse{0%{transform:scale(.55);opacity:.85}100%{transform:scale(2.6);opacity:0}}
   @keyframes hlbounce{0%{transform:translateY(-16px);opacity:0}60%{transform:translateY(3px)}100%{transform:translateY(0);opacity:1}}
+  /* emoji markers (cuisine symbol instead of text label) */
+  .em-pin{width:24px;height:24px;border-radius:50%;background:#fff;border:1.5px solid var(--line);box-shadow:0 1px 4px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1}
+  .em-pin.has{border-color:var(--green);box-shadow:0 0 0 2px rgba(31,174,90,.28),0 1px 4px rgba(0,0,0,.2)}
+  .em-pin.fav{border-color:var(--orange)}
   .leaflet-tooltip.lbl.is-hl{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:800;font-size:12.5px;box-shadow:0 6px 18px rgba(47,123,255,.5)}
   /* fade non-searched pins so the searched one pops */
   .searching .leaflet-marker-icon{opacity:.28;transition:opacity .3s}
@@ -380,21 +384,22 @@ function initMap(){
 let _rvTimer;
 function scheduleRefresh(){clearTimeout(_rvTimer);_rvTimer=setTimeout(refreshVisible,60);}
 function makeIcon(p){
-  const hl=p.id===highlightId;
+  if(p.id===highlightId){   // el buscado: pin azul grande y llamativo
+    const col='#2f7bff';
+    const ring=`<span class="ring" style="border-color:${hexA(col,.6)}"></span>`;
+    const dot=`<i style="background:${col};box-shadow:0 0 0 2px ${hexA(col,.18)},0 1px 4px rgba(0,0,0,.25)"></i>`;
+    return L.divIcon({className:'',html:`<div class="pin hl">${dot}${ring}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
+  }
   const hasDishes=saved.has(p.id)&&saved.get(p.id).dishes.length>0;
   const isFav=favorites.has(p.id);
-  const col=hl?'#2f7bff':(hasDishes?'#1fae5a':colorForPlace(p));   // azul si es el buscado, verde si tiene platos tuyos
-  const ring=(hl||hasDishes||isFav)?`<span class="ring" style="border-color:${hexA(col,.6)}"></span>`:'';
-  const dot=`<i style="background:${col};box-shadow:0 0 0 2px ${hexA(col,.18)},0 1px 4px rgba(0,0,0,.25)"></i>`;
-  const sz=hl?26:14;
-  return L.divIcon({className:'',html:`<div class="pin${hl?' hl':''}">${dot}${ring}</div>`,iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
+  const em=p.ckey?cuisineEmoji(p.ckey):'🍴';
+  const cls='em-pin'+(hasDishes?' has':(isFav?' fav':''));
+  return L.divIcon({className:'',html:`<div class="${cls}">${em}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
 }
-function addMarker(p,label){
-  const hasDishes=saved.has(p.id)&&saved.get(p.id).dishes.length>0;
-  const m=L.marker([p.lat,p.lng],{icon:makeIcon(p)});
+function addMarker(p){
+  const m=L.marker([p.lat,p.lng],{icon:makeIcon(p),keyboard:false});
   m.on('click',e=>{L.DomEvent.stopPropagation(e);openPanel(p.id);});
-  const hl=p.id===highlightId;
-  if(label)m.bindTooltip(p.name,{permanent:true,direction:'top',className:'lbl'+(hl?' is-hl':(hasDishes?' is-saved':'')),offset:[0,hl?-14:-7]});
+  if(p.id===highlightId)m.bindTooltip(p.name,{permanent:true,direction:'top',className:'lbl is-hl',offset:[0,-16]});
   m.addTo(markerLayer);markers.set(p.id,m);
 }
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
@@ -410,28 +415,11 @@ function refreshVisible(){
     if(activeCuisine&&p.ckey!==activeCuisine)return false;
     return true;
   });
-  vis.sort((a,b)=>dist2(a,c)-dist2(b,c));
-  const showLabels=z>=LABEL_ZOOM;
-  const placed=[];let labels=0;
-  // reservar la zona del pin buscado (pin grande + su título) para que nada se le monte encima
-  const hlPlace=highlightId?vis.find(p=>p.id===highlightId):null;
-  if(hlPlace){
-    const pt=map.latLngToContainerPoint([hlPlace.lat,hlPlace.lng]);
-    const w=Math.min(210,hlPlace.name.length*7+24);
-    placed.push({x1:pt.x-w/2-6,y1:pt.y-42,x2:pt.x+w/2+6,y2:pt.y+16});
+  if(vis.length>MAX_MARKERS){                 // solo los más cercanos, para ir fluido
+    vis.sort((a,b)=>dist2(a,c)-dist2(b,c));
+    vis=vis.slice(0,MAX_MARKERS);
   }
-  vis.slice(0,MAX_MARKERS).forEach(p=>{
-    let label=false;
-    if(p.id===highlightId){addMarker(p,true);return;}
-    if(showLabels&&labels<MAX_LABELS){
-      const pt=map.latLngToContainerPoint([p.lat,p.lng]);
-      const w=Math.min(190,p.name.length*6.6+16),h=20;
-      const box={x1:pt.x-w/2-3,y1:pt.y-h-11,x2:pt.x+w/2+3,y2:pt.y-7};
-      const clash=placed.some(b=>!(box.x2<b.x1||box.x1>b.x2||box.y2<b.y1||box.y1>b.y2));
-      if(!clash){placed.push(box);label=true;labels++;}
-    }
-    addMarker(p,label);
-  });
+  for(const p of vis) addMarker(p);
 }
 
 /* data */
