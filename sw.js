@@ -1,10 +1,10 @@
-/* Saboreo · service worker (v2)
-   Objetivo: que la app CARGUE RÁPIDO y a la vez se ACTUALICE RÁPIDO.
-   - HTML (la app): primero red, y si no hay internet, cache -> siempre ves la última versión online.
-   - Resto de archivos propios (data.js, leaflet, iconos): se sirven al instante desde cache
-     y se refrescan en segundo plano (stale-while-revalidate).
-   - El mapa (cartocdn) va siempre por red: necesita internet. */
-const CACHE = 'saboreo-v2';
+/* Saboreo · service worker (v3)
+   - HTML (la app): primero red, cache de respaldo -> siempre ves lo último online.
+   - Archivos propios (data.js, leaflet, iconos): cache al instante + refresco en segundo plano.
+   - Baldosas del mapa (cartocdn): cache-first -> una vez vistas, cargan AL INSTANTE y no se
+     recargan una y otra vez. Se guardan en una caché aparte para no mezclarlas con la app. */
+const CACHE = 'saboreo-v3';
+const TILES = 'saboreo-tiles-v1';
 const SHELL = [
   './',
   './index.html',
@@ -23,7 +23,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== TILES).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -32,10 +32,22 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // El mapa y cualquier cosa externa: directa a la red, sin tocar.
+
+  // Baldosas del mapa: cache primero (rapidísimo), y si no está, red y se guarda.
+  if (url.hostname.endsWith('basemaps.cartocdn.com')) {
+    e.respondWith(
+      caches.open(TILES).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {
+        c.put(req, res.clone()).catch(() => {});
+        return res;
+      })))
+    );
+    return;
+  }
+
+  // Cualquier otra cosa externa: directa a la red.
   if (url.origin !== self.location.origin) return;
 
-  // La app (navegación / HTML): primero RED para ver siempre lo último; cache como respaldo offline.
+  // La app (HTML): primero red, cache de respaldo.
   const isHTML = req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/');
   if (isHTML) {
     e.respondWith(
