@@ -108,8 +108,10 @@
   .cuisines .clear:hover{color:var(--txt)}
 
   /* side panel */
-  .panel{position:absolute;top:0;right:0;bottom:0;width:100%;z-index:800;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(102%);visibility:hidden;transition:transform .35s cubic-bezier(.22,1,.36,1),visibility 0s .35s;display:flex;flex-direction:column}
-  .panel.open{transform:translateX(0);visibility:visible;transition:transform .35s cubic-bezier(.22,1,.36,1),visibility 0s 0s}
+  .panel{position:absolute;top:0;right:0;bottom:0;width:100%;z-index:800;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);display:flex;flex-direction:column}
+  .panel:not(.open){display:none}
+  .panel.open{animation:panelIn .32s cubic-bezier(.22,1,.36,1)}
+  @keyframes panelIn{from{transform:translateX(100%);opacity:.5}to{transform:translateX(0);opacity:1}}
   .panel-head{padding:calc(20px + env(safe-area-inset-top)) 22px 16px;border-bottom:1px solid var(--line);position:relative;background:linear-gradient(135deg,rgba(255,122,26,.06),rgba(31,174,90,.06))}
   .panel-head .cat{font-size:10px;letter-spacing:.22em;color:var(--orange);text-transform:uppercase;font-weight:800}
   .panel-head h2{margin:8px 0 4px;font-size:22px;line-height:1.15;padding-right:40px}
@@ -590,14 +592,22 @@ function onMapClick(e){
 
 /* search suggestions */
 let sugIndex=-1,sugItems=[];
+function nameRank(name,term){   // -1=no coincide; 0=el nombre empieza por el término; n=la palabra nº empieza por él
+  const n=norm(name);
+  if(n.startsWith(term))return 0;
+  const words=n.split(/[^a-z0-9]+/);
+  for(let i=0;i<words.length;i++){ if(words[i]&&words[i].startsWith(term))return i+1; }
+  return -1;
+}
 function onSearchInput(){
   const term=norm(document.getElementById('search').value);
   const box=document.getElementById('suggest');
   if(term.length<2){box.classList.remove('show');box.innerHTML='';sugItems=[];return;}
   const c=map.getCenter();
-  const res=PLACES.filter(p=>norm(p.name).includes(term))
-    .map(p=>{const n=norm(p.name);return {p,starts:n.startsWith(term)?0:1,idx:n.indexOf(term),d:dist2(p,c)};})
-    .sort((a,b)=> a.starts-b.starts || a.idx-b.idx || a.d-b.d)   // nombre primero, distancia solo como desempate
+  const res=PLACES.map(p=>({p,m:nameRank(p.name,term)}))
+    .filter(o=>o.m>=0)                                  // solo coincidencias por principio de palabra
+    .map(o=>({p:o.p,m:o.m,d:dist2(o.p,c)}))
+    .sort((a,b)=> a.m-b.m || a.d-b.d)                   // mejor coincidencia primero; distancia solo desempata
     .slice(0,12);
   sugItems=res.map(r=>r.p);sugIndex=-1;
   if(!res.length){box.innerHTML=`<div class="row" style="cursor:default;color:var(--txt-dim)">Sin resultados</div>`;box.classList.add('show');return;}
