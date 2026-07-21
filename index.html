@@ -578,7 +578,11 @@ async function deleteDish(id,i){const rec=saved.get(id);if(!rec)return;rec.dishe
 /* add place */
 function toggleAddMode(){addMode=!addMode;document.getElementById('dAdd').classList.toggle('active',addMode);document.getElementById('modebar').classList.toggle('show',addMode);document.getElementById('map').style.cursor=addMode?'crosshair':'';}
 function onMapClick(e){
-  if(!addMode)return;const name=prompt('Nombre del restaurante nuevo:');if(!name)return;
+  if(!addMode){
+    if(highlightId){highlightId=null;document.getElementById('map').classList.remove('searching');refreshVisible();}
+    return;
+  }
+  const name=prompt('Nombre del restaurante nuevo:');if(!name)return;
   const id='custom-'+PLACES.length+'-'+Math.floor(e.latlng.lat*1e5);
   const p={id,name:name.trim(),cat:'Añadido por ti',addr:'Madrid',lat:e.latlng.lat,lng:e.latlng.lng,custom:true,ckey:null};
   known.set(id,p);PLACES.push(p);toggleAddMode();refreshVisible();openPanel(id);toast('Restaurante añadido ✓');
@@ -607,9 +611,11 @@ function pickSuggest(i){
   const p=sugItems[i];if(!p)return;
   document.getElementById('suggest').classList.remove('show');
   document.getElementById('search').value=p.name;
+  document.getElementById('search').blur();
   highlightId=p.id;
   document.getElementById('map').classList.add('searching');
-  map.setView([p.lat,p.lng],17);openPanel(p.id);
+  map.setView([p.lat,p.lng],17);refreshVisible();
+  toast('📍 '+p.name+' · toca el punto para ver sus platos');
 }
 function onSearchKey(e){
   const box=document.getElementById('suggest');if(!box.classList.contains('show'))return;
