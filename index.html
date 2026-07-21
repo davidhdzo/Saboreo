@@ -300,6 +300,7 @@
 <!-- bottom dock -->
 <div class="dock">
   <button id="dCuisine"><span class="ic">🍽️</span><span class="lb">Cocina</span></button>
+  <button id="dVisited"><span class="ic">📌</span><span class="lb">Visitados</span></button>
   <button id="dNear"><span class="ic">📍</span><span class="lb">Cerca</span></button>
   <div class="sep"></div>
   <button id="dAdd" class="add"><span class="ic">＋</span><span class="lb">Añadir</span></button>
@@ -415,7 +416,7 @@ const DB={db:null,
   all(){return new Promise(res=>{const t=this.db.transaction('places','readonly');const q=t.objectStore('places').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);});}
 };
 
-let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,favMode=false,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='comida';
+let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,favMode=false,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='comida',visitedMode=false;
 const saved=new Map(),known=new Map();
 let PLACES=[];
 const favorites=new Set(JSON.parse(localStorage.getItem('saboreo_favs')||'[]'));
@@ -454,6 +455,11 @@ function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
 function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
   const z=map.getZoom(),hint=document.getElementById('zoomHint');
+  if(visitedMode){   // mostrar TODOS los sitios visitados, estén cerca o lejos, a cualquier zoom
+    hint.classList.remove('show');
+    PLACES.filter(p=>saved.has(p.id)&&saved.get(p.id).dishes.length>0).forEach(p=>addMarker(p,z>=LABEL_ZOOM));
+    return;
+  }
   if(z<MIN_ZOOM){hint.classList.add('show');return;}
   hint.classList.remove('show');
   const b=map.getBounds(),c=map.getCenter();
@@ -674,9 +680,24 @@ function selectCuisine(key){
 }
 function toggleCuisinePop(){document.getElementById('cuisines').classList.toggle('show');}
 
+/* visitados: mostrar en el mapa todos los sitios a los que he ido */
+function toggleVisited(){
+  const vs=PLACES.filter(p=>saved.has(p.id)&&saved.get(p.id).dishes.length>0);
+  visitedMode=!visitedMode;
+  if(visitedMode&&!vs.length){visitedMode=false;toast('Aún no has guardado ningún sitio 🍽️');return;}
+  if(visitedMode){favMode=false;}
+  document.getElementById('dVisited').classList.toggle('active',visitedMode);
+  refreshVisible();
+  if(visitedMode){
+    const g=L.featureGroup(vs.map(p=>L.marker([p.lat,p.lng])));
+    map.fitBounds(g.getBounds().pad(.3),{maxZoom:16});
+    toast(`${vs.length} sitio${vs.length>1?'s':''} visitado${vs.length>1?'s':''} 📌`);
+  }
+}
+
 /* favoritos mode */
 function toggleFavMode(){
-  favMode=!favMode;refreshVisible();
+  favMode=!favMode;if(favMode){visitedMode=false;document.getElementById('dVisited').classList.remove('active');}refreshVisible();
   if(favMode){
     const favs=PLACES.filter(p=>favorites.has(p.id));
     if(!favs.length){toast('Aún no tienes favoritos ⭐');}
@@ -883,6 +904,7 @@ function wire(){
   document.getElementById('dRate').oninput=e=>document.getElementById('rateVal').textContent=parseFloat(e.target.value).toFixed(1);
   document.getElementById('dCuisine').onclick=toggleCuisinePop;
   document.getElementById('clearCuisine').onclick=()=>{activeCuisine=null;document.querySelectorAll('#cwrap .c').forEach(el=>{el.classList.remove('on');el.style.background='';el.style.borderColor='';el.style.color='';});document.getElementById('dCuisine').classList.remove('active');document.getElementById('cuisines').classList.remove('show');refreshVisible();};
+  document.getElementById('dVisited').onclick=toggleVisited;
   document.getElementById('dNear').onclick=nearMe;
   document.getElementById('dAdd').onclick=toggleAddMode;
   const menuPop=document.getElementById('menuPop');
