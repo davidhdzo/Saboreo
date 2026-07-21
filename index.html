@@ -455,12 +455,11 @@ function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
 function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
   const z=map.getZoom(),hint=document.getElementById('zoomHint');
-  if(visitedMode){   // mostrar TODOS los sitios visitados, estén cerca o lejos, a cualquier zoom
+  if(visitedMode){   // todos los sitios visitados, cerca o lejos, a cualquier zoom
     hint.classList.remove('show');
-    PLACES.filter(p=>saved.has(p.id)&&saved.get(p.id).dishes.length>0).forEach(p=>addMarker(p,z>=LABEL_ZOOM));
+    PLACES.filter(p=>saved.has(p.id)&&saved.get(p.id).dishes.length>0).forEach(p=>addMarker(p,true));
     return;
   }
-  if(z<MIN_ZOOM){hint.classList.add('show');return;}
   hint.classList.remove('show');
   const b=map.getBounds(),c=map.getCenter();
   let vis=PLACES.filter(p=>{
@@ -470,23 +469,24 @@ function refreshVisible(){
     return true;
   });
   vis.sort((a,b)=>dist2(a,c)-dist2(b,c));
-  const showLabels=z>=LABEL_ZOOM;
+  const wide=!!activeCuisine||favMode;                 // menos sitios -> aprovechar el hueco: más pines y más nombres
+  const maxMarkers=wide?240:MAX_MARKERS, maxLabels=wide?70:MAX_LABELS;
   const placed=[];let labels=0;
-  // reservar la zona del pin buscado (pin grande + su título) para que nada se le monte encima
+  // reservar la zona del pin buscado (pin grande + su título)
   const hlPlace=highlightId?vis.find(p=>p.id===highlightId):null;
   if(hlPlace){
     const pt=map.latLngToContainerPoint([hlPlace.lat,hlPlace.lng]);
     const w=Math.min(210,hlPlace.name.length*7+24);
     placed.push({x1:pt.x-w/2-6,y1:pt.y-42,x2:pt.x+w/2+6,y2:pt.y+16});
   }
-  vis.slice(0,MAX_MARKERS).forEach(p=>{
+  vis.slice(0,maxMarkers).forEach(p=>{
     let label=false;
     if(p.id===highlightId){addMarker(p,true);return;}
-    if(showLabels&&labels<MAX_LABELS){
+    if(labels<maxLabels){        // nombres progresivos: pocos con poco zoom, más al ampliar (según van cabiendo)
       const pt=map.latLngToContainerPoint([p.lat,p.lng]);
       const w=Math.min(190,p.name.length*6.6+16),h=20;
       const box={x1:pt.x-w/2-3,y1:pt.y-h-11,x2:pt.x+w/2+3,y2:pt.y-7};
-      const clash=placed.some(b=>!(box.x2<b.x1||box.x1>b.x2||box.y2<b.y1||box.y1>b.y2));
+      const clash=placed.some(bx=>!(box.x2<bx.x1||box.x1>bx.x2||box.y2<bx.y1||box.y1>bx.y2));
       if(!clash){placed.push(box);label=true;labels++;}
     }
     addMarker(p,label);
