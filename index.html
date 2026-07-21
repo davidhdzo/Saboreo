@@ -54,7 +54,7 @@
   .brand small{font-size:9.5px;letter-spacing:.28em;color:var(--txt-dim);display:block;margin-top:1px;font-weight:600}
 
   .search{pointer-events:auto;margin-left:auto;position:relative;width:min(360px,52vw)}
-  .search input{width:100%;padding:11px 14px 11px 40px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.95);backdrop-filter:blur(10px);color:var(--txt);font-size:13px;outline:none;transition:.2s;box-shadow:var(--shadow-sm)}
+  .search input{width:100%;padding:11px 14px 11px 40px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.95);backdrop-filter:blur(10px);color:var(--txt);font-size:16px;outline:none;transition:.2s;box-shadow:var(--shadow-sm)}
   .search input:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(255,122,26,.14)}
   .search svg{position:absolute;left:13px;top:19px;width:16px;height:16px;color:var(--txt-dim)}
   .suggest{position:absolute;top:48px;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;display:none}
@@ -108,8 +108,8 @@
   .cuisines .clear:hover{color:var(--txt)}
 
   /* side panel */
-  .panel{position:absolute;top:0;right:0;bottom:0;width:100%;z-index:800;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(102%);transition:transform .35s cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column}
-  .panel.open{transform:translateX(0)}
+  .panel{position:absolute;top:0;right:0;bottom:0;width:100%;z-index:800;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(102%);visibility:hidden;transition:transform .35s cubic-bezier(.22,1,.36,1),visibility 0s .35s;display:flex;flex-direction:column}
+  .panel.open{transform:translateX(0);visibility:visible;transition:transform .35s cubic-bezier(.22,1,.36,1),visibility 0s 0s}
   .panel-head{padding:calc(20px + env(safe-area-inset-top)) 22px 16px;border-bottom:1px solid var(--line);position:relative;background:linear-gradient(135deg,rgba(255,122,26,.06),rgba(31,174,90,.06))}
   .panel-head .cat{font-size:10px;letter-spacing:.22em;color:var(--orange);text-transform:uppercase;font-weight:800}
   .panel-head h2{margin:8px 0 4px;font-size:22px;line-height:1.15;padding-right:40px}
@@ -596,8 +596,9 @@ function onSearchInput(){
   if(term.length<2){box.classList.remove('show');box.innerHTML='';sugItems=[];return;}
   const c=map.getCenter();
   const res=PLACES.filter(p=>norm(p.name).includes(term))
-    .map(p=>({p,d:dist2(p,c)}))
-    .sort((a,b)=>a.d-b.d).slice(0,8);
+    .map(p=>{const n=norm(p.name);return {p,starts:n.startsWith(term)?0:1,idx:n.indexOf(term),d:dist2(p,c)};})
+    .sort((a,b)=> a.starts-b.starts || a.idx-b.idx || a.d-b.d)   // nombre primero, distancia solo como desempate
+    .slice(0,12);
   sugItems=res.map(r=>r.p);sugIndex=-1;
   if(!res.length){box.innerHTML=`<div class="row" style="cursor:default;color:var(--txt-dim)">Sin resultados</div>`;box.classList.add('show');return;}
   box.innerHTML=res.map((r,i)=>{
