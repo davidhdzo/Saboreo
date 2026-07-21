@@ -250,6 +250,9 @@
   .reel-addbtn{background:linear-gradient(135deg,var(--orange),var(--orange-d));color:#fff;border:none;border-radius:12px;padding:12px 20px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
   .reel-goto{margin-top:12px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);color:#fff;font-size:13px;font-weight:700;padding:9px 16px;border-radius:12px;cursor:pointer;font-family:inherit;backdrop-filter:blur(4px)}
 
+  .fs-btn{position:absolute;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:4;width:52px;height:52px;border-radius:50%;border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.55);backdrop-filter:blur(8px);color:#fff;font-size:20px;cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .fs-btn.hide{display:none}
+
   /* full-screen dish viewer */
   .viewer{position:absolute;inset:0;z-index:950;background:#000;display:none}
   .viewer.show{display:block}
@@ -316,7 +319,7 @@
     <button class="tab" data-tab="add">➕ Añadir plato</button>
   </div>
   <div class="panel-body">
-    <div class="tabpane pane-dishes" id="paneDishes"><div class="reel" id="dishReel"></div></div>
+    <div class="tabpane pane-dishes" id="paneDishes"><div class="reel" id="dishReel"></div><button class="fs-btn" id="fsBtn" title="Pantalla completa">⛶</button></div>
     <div class="tabpane pane-add" id="paneAdd" hidden>
     <div class="form">
       <div class="addcard">
@@ -536,6 +539,7 @@ function renderScores(id){
 function renderDishes(id){
   const reel=document.getElementById('dishReel'),rec=saved.get(id),dishes=rec?rec.dishes:[];
   renderScores(id);
+  document.getElementById('fsBtn').classList.toggle('hide',!dishes.length);
   if(!dishes.length){
     reel.innerHTML=`<div class="reel-card novid"><div class="reel-emptybox"><div class="bigemoji">🍽️</div><p>Todavía no has añadido platos aquí.</p><button class="reel-addbtn" id="reelAdd">➕ Añadir tu primer plato</button></div></div>`;
     const ra=document.getElementById('reelAdd');if(ra)ra.onclick=()=>switchTab('add');
@@ -695,15 +699,24 @@ function openDishesSheet(){
       let thumb=`<div class="thumb">${d.mtype&&d.mtype.startsWith('video')?'🎬':'🍽️'}</div>`;
       if(d.blob){const url=URL.createObjectURL(d.blob);thumb=d.mtype&&d.mtype.startsWith('video')?`<video class="thumb" src="${url}" muted></video>`:`<img class="thumb" src="${url}"/>`;}
       el.innerHTML=`${thumb}<div class="t"><b>${esc(d.name)}</b><small>${esc(p?p.name:'—')}</small></div>`;
-      el.onclick=()=>openViewer(i);
+      el.onclick=()=>openViewer(dishFeed,i);
       body.appendChild(el);
     });
   }
   document.getElementById('overlay').classList.add('show');
 }
-function openViewer(start){
+function openRestViewer(){
+  const rec=saved.get(current);if(!rec||!rec.dishes.length)return;
+  const p=known.get(current)||rec.meta;
+  const feed=rec.dishes.map(d=>({p,d}));
+  const dr=document.getElementById('dishReel');
+  const idx=dr.clientWidth?Math.round(dr.scrollLeft/dr.clientWidth):0;
+  openViewer(feed,idx);
+}
+function openViewer(feed,start){
+  dishFeed=feed;
   const reel=document.getElementById('viewerReel');reel.innerHTML='';
-  dishFeed.forEach(({p,d},i)=>{
+  feed.forEach(({p,d},i)=>{
     const card=document.createElement('div');card.className='reel-card';let media='';
     if(d.blob){const url=URL.createObjectURL(d.blob);
       media=d.mtype&&d.mtype.startsWith('video')
@@ -863,6 +876,7 @@ function wire(){
   document.getElementById('importFile').onchange=e=>{const f=e.target.files[0];if(f)importData(f);e.target.value='';};
   document.querySelectorAll('.panel .tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
   document.getElementById('viewerClose').onclick=closeViewer;
+  document.getElementById('fsBtn').onclick=openRestViewer;
 }
 
 async function boot(){
