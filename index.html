@@ -760,14 +760,24 @@ function renderScores(id){
   const cell=(cls,val,lbl)=>val==null?'':`<div class="sc ${cls}"><b>${val.toFixed(1)}</b><small>${lbl}</small></div>`;
   box.innerHTML=cell('global',s.global,'Global')+cell('',s.comida,'🍽️ Comida')+cell('',s.postre,'🍰 Postre');
 }
+// las fotos/vídeos se guardan como ArrayBuffer (fiable al releer, sobre todo en iOS);
+// se reconstruye un Blob "fresco" cada vez que se van a mostrar
+function dishHasMedia(d){return !!(d&&(d.buf||d.blob));}
+function dishBlob(d){if(!d)return null;if(d.buf)return new Blob([d.buf],{type:d.mtype||''});if(d.blob)return d.blob;return null;}
+// convierte fotos antiguas guardadas como Blob a ArrayBuffer (best-effort, en segundo plano) para que dejen de fallar
+function migrateMedia(rec){
+  if(!rec||!rec.dishes||!rec.dishes.some(d=>d.blob&&!d.buf))return;
+  Promise.all(rec.dishes.map(async d=>{if(d.blob&&!d.buf){try{d.buf=await d.blob.arrayBuffer();delete d.blob;}catch(e){}}}))
+    .then(()=>DB.put(rec)).catch(()=>{});
+}
 // URLs temporales de las fotos/vídeos; se liberan al redibujar para no saturar la memoria en iOS
 let reelURLs=[],viewerURLs=[];
 function trackURL(arr,blob){const u=URL.createObjectURL(blob);arr.push(u);return u;}
-// si la imagen/vídeo no carga (iOS a veces invalida la URL): reintenta desde el dato guardado y, si no, emoji
+// si la imagen/vídeo no carga: reintenta desde el dato guardado y, si aún así no, muestra emoji
 function attachMediaFallback(card,d){
-  const m=card.querySelector('img,video');if(!m||!d.blob)return;
+  const m=card.querySelector('img,video');if(!m||!dishHasMedia(d))return;
   m.addEventListener('error',()=>{
-    if(!m.dataset.retried){m.dataset.retried='1';try{m.src=URL.createObjectURL(d.blob);}catch(e){}return;}
+    if(!m.dataset.retried){m.dataset.retried='1';try{const b=dishBlob(d);if(b)m.src=URL.createObjectURL(b);}catch(e){}return;}
     card.classList.add('novid');m.remove();
     card.insertAdjacentHTML('afterbegin',`<div class="bigemoji">${d.course==='postre'?'🍰':'🍽️'}</div>`);
   });
@@ -782,11 +792,12 @@ function renderDishes(id){
     return;
   }
   const total=dishes.length;
+  migrateMedia(rec);
   reelURLs.forEach(u=>URL.revokeObjectURL(u));reelURLs=[];
   reel.innerHTML='';
   dishes.forEach((d,i)=>{
     const card=document.createElement('div');card.className='reel-card';let media='';
-    if(d.blob){const url=trackURL(reelURLs,d.blob);
+    if(dishHasMedia(d)){const url=trackURL(reelURLs,dishBlob(d));
       media=d.mtype&&d.mtype.startsWith('video')
         ?`<video src="${url}" muted loop playsinline autoplay></video>`
         :`<img src="${url}"/>`;
@@ -827,14 +838,14 @@ function setDropPreview(blob,mtype){
 /* editar un plato ya guardado (sin borrarlo): precarga el formulario */
 function editDish(id,i){
   const rec=saved.get(id);if(!rec)return;const d=rec.dishes[i];if(!d)return;
-  current=id;editIndex=i;pendingMedia=null;editMedia=d.blob?{blob:d.blob,type:d.mtype}:null;
+  current=id;editIndex=i;pendingMedia=null;editMedia=dishHasMedia(d)?{has:true}:null;
   document.getElementById('dName').value=d.name||'';
   document.getElementById('dDesc').value=d.desc||'';
   const r=typeof d.rating==='number'?d.rating:7;
   document.getElementById('dRate').value=r;document.getElementById('rateVal').textContent=r.toFixed(1);
   pendingCourse=d.course==='postre'?'postre':'comida';
   document.querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on',b.dataset.course===pendingCourse));
-  setDropPreview(d.blob,d.mtype);
+  setDropPreview(dishBlob(d),d.mtype);
   document.getElementById('saveDish').textContent='Guardar cambios';
   updateSaveBtn();showPane('add');
 }
@@ -847,11 +858,11 @@ async function saveDish(){
   if(wasEdit){
     const d=rec.dishes[editIndex];
     d.name=name;d.desc=desc;d.course=pendingCourse;d.rating=rating;
-    if(pendingMedia){d.blob=pendingMedia.blob;d.mtype=pendingMedia.type;}         // foto/vídeo cambiado
-    else if(editMedia){d.blob=editMedia.blob;d.mtype=editMedia.type;}             // se conserva el que había
-    else{delete d.blob;delete d.mtype;}
+    if(pendingMedia){d.buf=pendingMedia.buf;d.mtype=pendingMedia.type;delete d.blob;}   // foto/vídeo cambiado
+    else if(editMedia){/* se conserva el que ya tenía (d.buf o d.blob) */}
+    else{delete d.buf;delete d.blob;delete d.mtype;}                                    // se quitó la foto
   }else{
-    const dish={name,desc,course:pendingCourse,rating,ts:Date.now()};if(pendingMedia){dish.blob=pendingMedia.blob;dish.mtype=pendingMedia.type;}
+    const dish={name,desc,course:pendingCourse,rating,ts:Date.now()};if(pendingMedia){dish.buf=pendingMedia.buf;dish.mtype=pendingMedia.type;}
     rec.dishes.push(dish);
   }
   await DB.put(rec);saved.set(current,rec);
@@ -978,7 +989,7 @@ function openDishesSheet(){
     dishFeed.forEach(({p,d},i)=>{
       const el=document.createElement('div');el.className='listitem';
       let thumb=`<div class="thumb">${d.mtype&&d.mtype.startsWith('video')?'🎬':'🍽️'}</div>`;
-      if(d.blob){const url=URL.createObjectURL(d.blob);thumb=d.mtype&&d.mtype.startsWith('video')?`<video class="thumb" src="${url}" muted></video>`:`<img class="thumb" src="${url}"/>`;}
+      if(dishHasMedia(d)){const url=URL.createObjectURL(dishBlob(d));thumb=d.mtype&&d.mtype.startsWith('video')?`<video class="thumb" src="${url}" muted></video>`:`<img class="thumb" src="${url}"/>`;}
       el.innerHTML=`${thumb}<div class="t"><b>${esc(d.name)}</b><small>${esc(p?p.name:'—')}</small></div>`;
       el.onclick=()=>openViewer(dishFeed,i);
       body.appendChild(el);
@@ -999,7 +1010,7 @@ function openViewer(feed,start){
   const reel=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];reel.innerHTML='';reel.style.overflowX='';
   feed.forEach(({p,d},i)=>{
     const card=document.createElement('div');card.className='reel-card';let media='';
-    if(d.blob){const url=trackURL(viewerURLs,d.blob);
+    if(dishHasMedia(d)){const url=trackURL(viewerURLs,dishBlob(d));
       media=d.mtype&&d.mtype.startsWith('video')
         ?`<video src="${url}" muted loop playsinline autoplay></video>`
         :`<img src="${url}"/>`;
@@ -1094,7 +1105,7 @@ async function exportData(){
     const dishes=[];
     for(const d of r.dishes){
       const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,ts:d.ts,mtype:d.mtype};
-      if(d.blob)o.media=await blobToDataURL(d.blob);
+      const mb=dishBlob(d);if(mb)o.media=await blobToDataURL(mb);
       dishes.push(o);
     }
     places.push({id:r.id,meta:r.meta,dishes});
@@ -1115,7 +1126,7 @@ async function importData(file){
       const dishes=[];
       for(const d of pl.dishes){
         const dish={name:d.name,desc:d.desc,course:d.course,rating:d.rating,ts:d.ts,mtype:d.mtype};
-        if(d.media){try{dish.blob=await (await fetch(d.media)).blob();}catch(e){}}
+        if(d.media){try{dish.buf=await (await fetch(d.media)).arrayBuffer();}catch(e){}}
         dishes.push(dish);
       }
       const rec={id:pl.id,meta:pl.meta,dishes};
@@ -1157,10 +1168,9 @@ function wire(){
   document.addEventListener('click',e=>{if(!e.target.closest('.search')){document.getElementById('suggest').classList.remove('show');applyHint();}});
   const drop=document.getElementById('drop'),file=document.getElementById('file');
   drop.onclick=()=>file.click();
-  file.onchange=()=>{const f=file.files[0];if(!f)return;pendingMedia={blob:f,type:f.type};
-    const url=URL.createObjectURL(f);
-    const media=f.type.startsWith('video')?`<video src="${url}" muted loop playsinline autoplay></video>`:`<img src="${url}"/>`;
-    drop.classList.add('has');drop.innerHTML=`${media}<span class="redo">Cambiar</span>`;};
+  file.onchange=async()=>{const f=file.files[0];if(!f)return;
+    try{pendingMedia={type:f.type,buf:await f.arrayBuffer()};}catch(e){pendingMedia=null;toast('No se pudo leer el archivo');return;}
+    setDropPreview(f,f.type);};
   document.querySelectorAll('.segbtn').forEach(b=>b.onclick=()=>{pendingCourse=b.dataset.course;document.querySelectorAll('.segbtn').forEach(x=>x.classList.toggle('on',x===b));});
   document.getElementById('dRate').oninput=e=>document.getElementById('rateVal').textContent=parseFloat(e.target.value).toFixed(1);
   document.getElementById('dCuisine').onclick=toggleCuisinePop;
