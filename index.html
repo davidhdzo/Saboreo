@@ -295,7 +295,15 @@
   .viewer.show{display:block}
   .viewer .reel{height:100%}
   .viewer .reel-card img{transform-origin:center center;will-change:transform}
-  .viewer-close{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:5;width:38px;height:38px;border-radius:50%;border:none;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff;font-size:16px;cursor:pointer;display:grid;place-items:center}
+  .viewer-close{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:6;width:38px;height:38px;border-radius:50%;border:none;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff;font-size:16px;cursor:pointer;display:grid;place-items:center}
+  /* filtro de tipo dentro del visor a pantalla completa */
+  .viewer-filter{position:absolute;top:calc(12px + env(safe-area-inset-top));left:12px;right:58px;z-index:6;display:flex;gap:6px;justify-content:center;overflow-x:auto}
+  .viewer-filter::-webkit-scrollbar{display:none}
+  .vf-chip{flex:0 0 auto;background:rgba(0,0,0,.5);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.22);color:rgba(255,255,255,.85);font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:20px;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .vf-chip.on{background:linear-gradient(135deg,var(--orange),var(--green));color:#fff;border-color:transparent}
+  .viewer.rest .reel-top{padding-top:64px}
+  .rv-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:12px;font-weight:700;padding:5px 11px;border-radius:20px;cursor:pointer;font-family:inherit;backdrop-filter:blur(4px)}
+  .rv-btn.rv-del:hover{border-color:var(--danger)}
 
   /* ---- pantalla de información del restaurante ---- */
   .pane-info{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 22px calc(28px + env(safe-area-inset-bottom))}
@@ -423,7 +431,8 @@
         <div class="coursepick">
           <label>Tipo</label>
           <div class="seg">
-            <button type="button" class="segbtn on" data-course="comida">🍽️ Comida</button>
+            <button type="button" class="segbtn" data-course="entrante">🥗 Entrante</button>
+            <button type="button" class="segbtn on" data-course="plato">🍽️ Plato</button>
             <button type="button" class="segbtn" data-course="postre">🍰 Postre</button>
           </div>
         </div>
@@ -449,6 +458,7 @@
 <!-- visor de platos a pantalla completa -->
 <div class="viewer" id="viewer">
   <button class="viewer-close" id="viewerClose">✕</button>
+  <div class="viewer-filter" id="viewerFilter"></div>
   <div class="reel" id="viewerReel"></div>
 </div>
 
@@ -506,7 +516,7 @@ const DB={db:null,
   all(){return new Promise(res=>{const t=this.db.transaction('places','readonly');const q=t.objectStore('places').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);});}
 };
 
-let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='comida',mapMode='all';
+let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='plato',mapMode='all';
 // los 3 "mapas" de Saboreo:  all = explorar todos · eaten = donde he comido · wishlist = quiero ir
 const MODE_INFO={
   all:{em:'🗺️',t:'Explorar',s:'Todos los restaurantes'},
@@ -708,7 +718,7 @@ function renderInfo(id){
   document.getElementById('stBeen').onclick=()=>toggleBeen(id);
   document.getElementById('stWant').onclick=()=>toggleWant(id);
   document.querySelectorAll('#ccPick .ccchip').forEach(b=>b.onclick=()=>setCuisine(id,b.dataset.k||null));
-  const av=document.getElementById('actView');if(av)av.onclick=()=>{renderDishes(id);showPane('dishes');};
+  const av=document.getElementById('actView');if(av)av.onclick=()=>openRestFullscreen(id);
   const aa=document.getElementById('actAdd');if(aa)aa.onclick=()=>{clearForm();showPane('add');};
 }
 /* asignar/quitar el tipo de cocina de un restaurante */
@@ -764,6 +774,9 @@ function renderScores(id){
 // se reconstruye un Blob "fresco" cada vez que se van a mostrar
 function dishHasMedia(d){return !!(d&&(d.buf||d.blob));}
 function dishBlob(d){if(!d)return null;if(d.buf)return new Blob([d.buf],{type:d.mtype||''});if(d.blob)return d.blob;return null;}
+// tipo de plato: entrante / plato / postre (el antiguo 'comida' se trata como 'plato')
+function courseKey(c){return c==='postre'?'postre':(c==='entrante'?'entrante':'plato');}
+function courseInfo(c){const k=courseKey(c);return k==='postre'?{em:'🍰',t:'Postre'}:k==='entrante'?{em:'🥗',t:'Entrante'}:{em:'🍽️',t:'Plato'};}
 // convierte fotos antiguas guardadas como Blob a ArrayBuffer (best-effort, en segundo plano) para que dejen de fallar
 function migrateMedia(rec){
   if(!rec||!rec.dishes||!rec.dishes.some(d=>d.blob&&!d.buf))return;
@@ -801,9 +814,10 @@ function renderDishes(id){
       media=d.mtype&&d.mtype.startsWith('video')
         ?`<video src="${url}" muted loop playsinline autoplay></video>`
         :`<img src="${url}"/>`;
-    }else{card.classList.add('novid');media=`<div class="bigemoji">${d.course==='postre'?'🍰':'🍽️'}</div>`;}
+    }else{card.classList.add('novid');media=`<div class="bigemoji">${courseInfo(d.course).em}</div>`;}
+    const ci=courseInfo(d.course);
     const score=typeof d.rating==='number'?`<span class="reel-score">${d.rating.toFixed(1)}/10</span>`:'';
-    const tag=`<span class="reel-tag">${d.course==='postre'?'🍰 Postre':'🍽️ Comida'}</span>`;
+    const tag=`<span class="reel-tag">${ci.em} ${ci.t}</span>`;
     card.innerHTML=`${media}`+
       `<button class="reel-del" data-i="${i}" title="Eliminar">🗑</button>`+
       `<button class="reel-edit" data-i="${i}" title="Editar">✏️</button>`+
@@ -822,8 +836,8 @@ function clearForm(){
   const dr=document.getElementById('drop');dr.classList.remove('has');
   dr.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v13"/></svg><span class="dt">Sube una foto<br>o vídeo del plato</span>`;
   document.getElementById('dRate').value=7;document.getElementById('rateVal').textContent='7.0';
-  pendingCourse='comida';
-  document.querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on',b.dataset.course==='comida'));
+  pendingCourse='plato';
+  document.querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on',b.dataset.course==='plato'));
   document.getElementById('saveDish').textContent='Guardar plato';
   updateSaveBtn();
 }
@@ -843,7 +857,7 @@ function editDish(id,i){
   document.getElementById('dDesc').value=d.desc||'';
   const r=typeof d.rating==='number'?d.rating:7;
   document.getElementById('dRate').value=r;document.getElementById('rateVal').textContent=r.toFixed(1);
-  pendingCourse=d.course==='postre'?'postre':'comida';
+  pendingCourse=courseKey(d.course);
   document.querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on',b.dataset.course===pendingCourse));
   setDropPreview(dishBlob(d),d.mtype);
   document.getElementById('saveDish').textContent='Guardar cambios';
@@ -997,34 +1011,62 @@ function openDishesSheet(){
   }
   document.getElementById('overlay').classList.add('show');
 }
-function openRestViewer(){
-  const rec=saved.get(current);if(!rec||!rec.dishes.length)return;
-  const p=known.get(current)||rec.meta;
-  const feed=rec.dishes.map(d=>({p,d}));
-  const dr=document.getElementById('dishReel');
-  const idx=dr.clientWidth?Math.round(dr.scrollLeft/dr.clientWidth):0;
-  openViewer(feed,idx);
+let viewerMode='feed',viewerRestId=null,viewerCourse='all';
+function openRestViewer(){if(current)openRestFullscreen(current);}                    // botón ⛶ del reel interno
+function openRestFullscreen(id){                                                       // "Ver mis platos" -> pantalla completa directa
+  const rec=saved.get(id);if(!rec||!rec.dishes.length)return;
+  viewerMode='rest';viewerRestId=id;viewerCourse='all';renderViewer(0);
 }
-function openViewer(feed,start){
-  dishFeed=feed;
-  const reel=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];reel.innerHTML='';reel.style.overflowX='';
-  feed.forEach(({p,d},i)=>{
+function openViewer(feed,start){viewerMode='feed';dishFeed=feed;renderViewer(start);}  // "Mis platos" global (menú)
+function viewerList(){
+  if(viewerMode==='rest'){
+    const rec=saved.get(viewerRestId);if(!rec)return[];const p=known.get(viewerRestId)||rec.meta;
+    return rec.dishes.map((d,i)=>({d,p,i})).filter(o=>viewerCourse==='all'||courseKey(o.d.course)===viewerCourse);
+  }
+  return dishFeed.map((it,i)=>({d:it.d,p:it.p,i}));
+}
+function renderViewer(start){
+  const reel=document.getElementById('viewerReel'),bar=document.getElementById('viewerFilter'),v=document.getElementById('viewer');
+  viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];
+  reel.innerHTML='';reel.style.overflowX='';
+  v.classList.toggle('rest',viewerMode==='rest');
+  if(viewerMode==='rest'){
+    bar.style.display='flex';
+    bar.innerHTML=[['all','Todos'],['entrante','Entrantes'],['plato','Platos'],['postre','Postres']]
+      .map(([k,l])=>`<button class="vf-chip${viewerCourse===k?' on':''}" data-c="${k}">${l}</button>`).join('');
+    bar.querySelectorAll('.vf-chip').forEach(b=>b.onclick=()=>{viewerCourse=b.dataset.c;renderViewer(0);});
+  }else{bar.style.display='none';bar.innerHTML='';}
+  const list=viewerList();
+  v.classList.add('show');
+  if(!list.length){reel.innerHTML=`<div class="reel-card novid"><div class="reel-emptybox"><div class="bigemoji">🍽️</div><p>No tienes platos de este tipo aquí.</p></div></div>`;return;}
+  list.forEach(o=>{
+    const d=o.d,p=o.p,ci=courseInfo(d.course);
     const card=document.createElement('div');card.className='reel-card';let media='';
     if(dishHasMedia(d)){const url=trackURL(viewerURLs,dishBlob(d));
-      media=d.mtype&&d.mtype.startsWith('video')
-        ?`<video src="${url}" muted loop playsinline autoplay></video>`
-        :`<img src="${url}"/>`;
-    }else{card.classList.add('novid');media=`<div class="bigemoji">${d.course==='postre'?'🍰':'🍽️'}</div>`;}
+      media=d.mtype&&d.mtype.startsWith('video')?`<video src="${url}" muted loop playsinline autoplay></video>`:`<img src="${url}"/>`;
+    }else{card.classList.add('novid');media=`<div class="bigemoji">${ci.em}</div>`;}
     const score=typeof d.rating==='number'?`<span class="reel-score">${d.rating.toFixed(1)}/10</span>`:'';
-    const tag=`<span class="reel-tag">${d.course==='postre'?'🍰 Postre':'🍽️ Comida'}</span>`;
+    const tag=`<span class="reel-tag">${ci.em} ${ci.t}</span>`;
+    const label=viewerMode==='rest'?`${ci.em} ${ci.t}`:`${ci.em} ${ci.t}${p?' · 🍴 '+esc(p.name):''}`;
+    const actions=viewerMode==='rest'?`<button class="rv-btn rv-edit" data-i="${o.i}">✏️ Editar</button><button class="rv-btn rv-del" data-i="${o.i}">🗑</button>`:'';
+    const bottomBtn=viewerMode==='rest'?'':(p?`<button class="reel-goto" data-idx="${o.i}">📍 Ver restaurante</button>`:'');
     card.innerHTML=`${media}`+
-      `<div class="reel-top">${p?`<span class="reel-count">🍴 ${esc(p.name)}</span>`:''}<h3>${esc(d.name)}</h3></div>`+
-      `<div class="reel-bot"><div class="row1">${score}${tag}</div>${d.desc?`<p class="reel-desc">${esc(d.desc)}</p>`:''}${p?`<button class="reel-goto" data-idx="${i}">📍 Ver restaurante</button>`:''}</div>`;
+      `<div class="reel-top"><span class="reel-count">${label}</span><h3>${esc(d.name)}</h3></div>`+
+      `<div class="reel-bot"><div class="row1">${score}${tag}${actions}</div>${d.desc?`<p class="reel-desc">${esc(d.desc)}</p>`:''}${bottomBtn}</div>`;
     reel.appendChild(card);attachMediaFallback(card,d);
   });
-  const v=document.getElementById('viewer');v.classList.add('show');
-  reel.scrollLeft=start*reel.clientWidth;
-  reel.querySelectorAll('.reel-goto').forEach(b=>b.onclick=()=>{const it=dishFeed[+b.dataset.idx];closeViewer();closeOverlay();if(it&&it.p){map.setView([it.p.lat,it.p.lng],17);openPanel(it.p.id);}});
+  reel.scrollLeft=(start||0)*reel.clientWidth;
+  if(viewerMode==='rest'){
+    reel.querySelectorAll('.rv-del').forEach(b=>b.onclick=()=>viewerDelete(+b.dataset.i));
+    reel.querySelectorAll('.rv-edit').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;closeViewer();editDish(viewerRestId,i);});
+  }else{
+    reel.querySelectorAll('.reel-goto').forEach(b=>b.onclick=()=>{const it=dishFeed[+b.dataset.idx];closeViewer();closeOverlay();if(it&&it.p){map.setView([it.p.lat,it.p.lng],17);openPanel(it.p.id);}});
+  }
+}
+async function viewerDelete(i){
+  await deleteDish(viewerRestId,i);
+  const rec=saved.get(viewerRestId);
+  if(!rec||!rec.dishes.length){closeViewer();}else renderViewer(0);
 }
 function closeViewer(){document.getElementById('viewer').classList.remove('show');const r=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];r.innerHTML='';r.style.overflowX='';}
 /* pinch-zoom + doble toque + arrastre sobre la foto del visor */
