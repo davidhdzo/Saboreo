@@ -401,6 +401,7 @@
       <button class="mode-opt on" data-mode="all"><span class="mo-em">🗺️</span><span class="mo-tx"><b>Explorar</b><small>Todos los restaurantes</small></span><span class="mo-check">✓</span></button>
       <button class="mode-opt" data-mode="eaten"><span class="mo-em">😋</span><span class="mo-tx"><b>He comido aquí</b><small>Los sitios que has saboreado</small></span><span class="mo-check">✓</span></button>
       <button class="mode-opt" data-mode="wishlist"><span class="mo-em">⭐</span><span class="mo-tx"><b>Quiero ir</b><small>Tu lista de pendientes</small></span><span class="mo-check">✓</span></button>
+      <button class="mode-opt" data-mode="scores"><span class="mo-em">🏆</span><span class="mo-tx"><b>Notas</b><small>Tus puntuaciones · top 10 ⭐</small></span><span class="mo-check">✓</span></button>
     </div>
     <button class="mode-current" id="modeCurrent"><span class="mc-em" id="modeEm">🗺️</span><span class="mc-chev">▾</span></button>
   </div>
@@ -549,7 +550,8 @@ let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=nu
 const MODE_INFO={
   all:{em:'🗺️',t:'Explorar',s:'Todos los restaurantes'},
   eaten:{em:'😋',t:'He comido aquí',s:'Los sitios que has saboreado'},
-  wishlist:{em:'⭐',t:'Quiero ir',s:'Tu lista de pendientes'}
+  wishlist:{em:'⭐',t:'Quiero ir',s:'Tu lista de pendientes'},
+  scores:{em:'🏆',t:'Notas',s:'Tus puntuaciones · top 10 ⭐'}
 };
 const saved=new Map(),known=new Map();
 let PLACES=[];
@@ -602,12 +604,12 @@ function makeIcon(p){
   const dot=`<i style="background:${col};box-shadow:0 0 0 2px ${hexA(col,.18)},0 1px 4px rgba(0,0,0,.25)"></i>`;
   return L.divIcon({className:'',html:`<div class="pin">${dot}${ring}</div>`,iconSize:[14,14],iconAnchor:[7,7]});
 }
-function addMarker(p,label){
+function addMarker(p,label,labelText){
   const been=isVisited(p.id);
   const m=L.marker([p.lat,p.lng],{icon:makeIcon(p),keyboard:false});
   m.on('click',e=>{L.DomEvent.stopPropagation(e);openPanel(p.id);});
   const hl=p.id===highlightId;
-  if(label)m.bindTooltip(p.name,{permanent:true,interactive:true,direction:'top',className:'lbl'+(hl?' is-hl':(been?' is-saved':'')),offset:[0,hl?-16:(been?-14:-7)]});
+  if(label)m.bindTooltip(labelText||p.name,{permanent:true,interactive:true,direction:'top',className:'lbl'+(hl?' is-hl':(been?' is-saved':'')),offset:[0,hl?-16:(been?-14:-7)]});
   m.addTo(markerLayer);markers.set(p.id,m);
 }
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
@@ -620,6 +622,19 @@ function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
   const z=map.getZoom();
   _lastRefreshCenter=map.getCenter();_lastRefreshZoom=z;
+  if(mapMode==='scores'){   // "Notas": solo sitios con nota; media junto al nombre; top 10 con ⭐
+    hintWanted=false;applyHint();
+    const scored=[];
+    PLACES.forEach(p=>{
+      if(activeCuisine&&p.ckey!==activeCuisine)return;
+      const g=calcScores(p.id).global;
+      if(g!=null)scored.push({p,g});
+    });
+    scored.sort((a,b)=>b.g-a.g);
+    const topSet=new Set(scored.slice(0,10).map(o=>o.p.id));
+    scored.forEach(o=>addMarker(o.p,true,`${topSet.has(o.p.id)?'⭐ ':''}${o.p.name} · ${o.g.toFixed(1)}`));
+    return;
+  }
   if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
     hintWanted=false;applyHint();
     const inSet=mapMode==='eaten'?(p=>isVisited(p.id)):(p=>favorites.has(p.id));
@@ -1009,12 +1024,13 @@ function setMapMode(mode){
   document.getElementById('mapModes').classList.remove('open');
   refreshVisible();
   if(mode==='all')return;
-  const set=PLACES.filter(mode==='eaten'?(p=>isVisited(p.id)):(p=>favorites.has(p.id)));
-  if(!set.length){toast(mode==='eaten'?'Aún no has marcado ningún sitio como visitado 😋':'Tu lista "Quiero ir" está vacía ⭐');return;}
+  const pred=mode==='eaten'?(p=>isVisited(p.id)):mode==='wishlist'?(p=>favorites.has(p.id)):(p=>calcScores(p.id).global!=null);
+  const set=PLACES.filter(pred);
+  if(!set.length){toast(mode==='eaten'?'Aún no has marcado ningún sitio como visitado 😋':mode==='wishlist'?'Tu lista "Quiero ir" está vacía ⭐':'Aún no has puntuado ningún plato 🏆');return;}
   const g=L.featureGroup(set.map(p=>L.marker([p.lat,p.lng])));
   map.fitBounds(g.getBounds().pad(.3),{maxZoom:16});
   const n=set.length;
-  toast(mode==='eaten'?`${n} sitio${n>1?'s':''} probado${n>1?'s':''} 😋`:`${n} sitio${n>1?'s':''} por visitar ⭐`);
+  toast(mode==='eaten'?`${n} sitio${n>1?'s':''} probado${n>1?'s':''} 😋`:mode==='wishlist'?`${n} sitio${n>1?'s':''} por visitar ⭐`:`${n} sitio${n>1?'s':''} con nota 🏆`);
 }
 
 /* mis platos overlay */
