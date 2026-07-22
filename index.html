@@ -96,6 +96,9 @@
   .dock .add{background:linear-gradient(135deg,var(--orange),var(--orange-d));color:#fff}
   .dock .add:hover{color:#fff;filter:brightness(1.05)}
   .dock .add.active{background:var(--danger)}
+  /* con el panel abierto ocultamos la barra inferior y sus menús: en iOS su desenfoque (backdrop-filter)
+     se colaba por encima del panel pintando la mitad inferior de naranja y bloqueando los toques */
+  body.panel-open .dock,body.panel-open .cuisines,body.panel-open .menupop{display:none!important}
 
   /* ---- selector de mapas (Saboreo), compacto dentro del dock ---- */
   .dock .mapmodes{position:relative;display:flex}
@@ -660,9 +663,10 @@ function openPanel(id){
   updateFavStar(id);
   clearForm();renderInfo(id);showPane('info');
   document.getElementById('panel').classList.add('open');
+  document.body.classList.add('panel-open');
   closeOverlay();map.panTo([p.lat,p.lng]);
 }
-function closePanel(){document.getElementById('panel').classList.remove('open');current=null;if(highlightId){highlightId=null;document.getElementById('map').classList.remove('searching');refreshVisible();}}
+function closePanel(){document.getElementById('panel').classList.remove('open');document.body.classList.remove('panel-open');current=null;if(highlightId){highlightId=null;document.getElementById('map').classList.remove('searching');refreshVisible();}}
 function updateFavStar(id){const fs=document.getElementById('favStar');const on=favorites.has(id);fs.classList.toggle('on',on);fs.textContent=on?'★':'☆';}
 
 /* mostrar una de las 3 sub-pantallas del panel */
