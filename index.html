@@ -549,12 +549,15 @@ function addMarker(p,label){
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
 function hasDishes(id){const r=saved.get(id);return !!(r&&r.dishes.length>0);}
 function isVisited(id){return visited.has(id)||hasDishes(id);}   // "he ido": marcado a mano o con platos guardados
+let hintWanted=false;   // el mapa "querría" mostrar el aviso de acercarse (según zoom)
+// mostramos el aviso solo si no hay sugerencias de búsqueda abiertas (para que no se solapen)
+function applyHint(){document.getElementById('zoomHint').classList.toggle('show',hintWanted&&!document.getElementById('suggest').classList.contains('show'));}
 function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
-  const z=map.getZoom(),hint=document.getElementById('zoomHint');
+  const z=map.getZoom();
   _lastRefreshCenter=map.getCenter();_lastRefreshZoom=z;
   if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
-    hint.classList.remove('show');
+    hintWanted=false;applyHint();
     const inSet=mapMode==='eaten'?(p=>isVisited(p.id)):(p=>favorites.has(p.id));
     PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine)).forEach(p=>addMarker(p,true));
     return;
@@ -602,7 +605,7 @@ function refreshVisible(){
 
   // 2) el RESTO de restaurantes: solo con suficiente zoom; van apareciendo al acercarte
   const showRest=filtered||z>=POI_MIN_ZOOM;
-  hint.classList.toggle('show',!showRest);
+  hintWanted=!showRest;applyHint();
   if(showRest){
     let shown=0;
     for(const p of vis){
@@ -827,7 +830,7 @@ function nameRank(name,term){   // -1=no coincide; 0=el nombre empieza por el t�
 function onSearchInput(){
   const term=norm(document.getElementById('search').value);
   const box=document.getElementById('suggest');
-  if(term.length<2){box.classList.remove('show');box.innerHTML='';sugItems=[];return;}
+  if(term.length<2){box.classList.remove('show');box.innerHTML='';sugItems=[];applyHint();return;}
   const c=map.getCenter();
   const res=PLACES.map(p=>({p,m:nameRank(p.name,term)}))
     .filter(o=>o.m>=0)                                  // solo coincidencias por principio de palabra
@@ -835,12 +838,12 @@ function onSearchInput(){
     .sort((a,b)=> a.m-b.m || a.d-b.d)                   // mejor coincidencia primero; distancia solo desempata
     .slice(0,12);
   sugItems=res.map(r=>r.p);sugIndex=-1;
-  if(!res.length){box.innerHTML=`<div class="row" style="cursor:default;color:var(--txt-dim)">Sin resultados</div>`;box.classList.add('show');return;}
+  if(!res.length){box.innerHTML=`<div class="row" style="cursor:default;color:var(--txt-dim)">Sin resultados</div>`;box.classList.add('show');applyHint();return;}
   box.innerHTML=res.map((r,i)=>{
     const km=Math.sqrt(r.d)*111;const kmTxt=km<1?Math.round(km*1000)+' m':km.toFixed(1)+' km';
     return `<div class="row" data-i="${i}"><span class="emoji">${r.p.ckey?cuisineEmoji(r.p.ckey):'🍴'}</span><div class="t"><b>${esc(r.p.name)}</b><small>${esc(r.p.addr||'Madrid')}</small></div><span class="km">${kmTxt}</span></div>`;
   }).join('');
-  box.classList.add('show');
+  box.classList.add('show');applyHint();
   box.querySelectorAll('.row[data-i]').forEach(row=>row.onclick=()=>pickSuggest(+row.dataset.i));
 }
 function pickSuggest(i){
@@ -859,7 +862,7 @@ function onSearchKey(e){
   if(e.key==='ArrowDown'){e.preventDefault();sugIndex=Math.min(sugIndex+1,rows.length-1);}
   else if(e.key==='ArrowUp'){e.preventDefault();sugIndex=Math.max(sugIndex-1,0);}
   else if(e.key==='Enter'){e.preventDefault();pickSuggest(sugIndex<0?0:sugIndex);return;}
-  else if(e.key==='Escape'){box.classList.remove('show');return;}
+  else if(e.key==='Escape'){box.classList.remove('show');applyHint();return;}
   rows.forEach((r,i)=>r.classList.toggle('on',i===sugIndex));
 }
 
@@ -1093,7 +1096,7 @@ function wire(){
   document.getElementById('saveDish').onclick=saveDish;
   const s=document.getElementById('search');
   s.addEventListener('input',onSearchInput);s.addEventListener('keydown',onSearchKey);
-  document.addEventListener('click',e=>{if(!e.target.closest('.search'))document.getElementById('suggest').classList.remove('show');});
+  document.addEventListener('click',e=>{if(!e.target.closest('.search')){document.getElementById('suggest').classList.remove('show');applyHint();}});
   const drop=document.getElementById('drop'),file=document.getElementById('file');
   drop.onclick=()=>file.click();
   file.onchange=()=>{const f=file.files[0];if(!f)return;pendingMedia={blob:f,type:f.type};
