@@ -294,7 +294,7 @@
   .viewer{position:absolute;inset:0;z-index:950;background:#000;display:none}
   .viewer.show{display:block}
   .viewer .reel{height:100%}
-  .viewer .reel-card img{transform-origin:center center;will-change:transform;touch-action:none}
+  .viewer .reel-card img{transform-origin:center center;will-change:transform}
   .viewer-close{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:5;width:38px;height:38px;border-radius:50%;border:none;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff;font-size:16px;cursor:pointer;display:grid;place-items:center}
 
   /* ---- pantalla de información del restaurante ---- */
@@ -1032,16 +1032,16 @@ function applyT(img){img.style.transform=`translate(${img._x||0}px,${img._y||0}p
 function setupZoom(){
   const reel=document.getElementById('viewerReel');
   let gImg=null,gStart=1;
-  reel.addEventListener('gesturestart',e=>{const img=e.target.closest('img');if(!img)return;e.preventDefault();gImg=img;gStart=img._scale||1;reel.style.overflowX='hidden';});
+  reel.addEventListener('gesturestart',e=>{const img=e.target.closest('img');if(!img)return;e.preventDefault();gImg=img;gStart=img._scale||1;reel.style.overflowX='hidden';img.style.touchAction='none';});
   reel.addEventListener('gesturechange',e=>{if(!gImg)return;e.preventDefault();gImg._scale=Math.max(1,Math.min(4,gStart*e.scale));applyT(gImg);});
-  reel.addEventListener('gestureend',()=>{if(!gImg)return;if((gImg._scale||1)<=1.02){gImg._scale=1;gImg._x=0;gImg._y=0;applyT(gImg);reel.style.overflowX='';}gImg=null;});
+  reel.addEventListener('gestureend',()=>{if(!gImg)return;if((gImg._scale||1)<=1.02){gImg._scale=1;gImg._x=0;gImg._y=0;applyT(gImg);reel.style.overflowX='';gImg.style.touchAction='';}gImg=null;});
   let panImg=null,px=0,py=0,ox=0,oy=0;
   reel.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;const img=e.target.closest('img');if(!img||(img._scale||1)<=1)return;panImg=img;px=e.touches[0].clientX;py=e.touches[0].clientY;ox=img._x||0;oy=img._y||0;},{passive:false});
   reel.addEventListener('touchmove',e=>{if(!panImg||e.touches.length!==1)return;e.preventDefault();panImg._x=ox+(e.touches[0].clientX-px);panImg._y=oy+(e.touches[0].clientY-py);applyT(panImg);},{passive:false});
   reel.addEventListener('touchend',()=>{panImg=null;});
   let lastTap=0;
   reel.addEventListener('touchend',e=>{const img=e.target.closest('img');if(!img)return;const now=Date.now();
-    if(now-lastTap<300){if((img._scale||1)>1){img._scale=1;img._x=0;img._y=0;reel.style.overflowX='';}else{img._scale=2.5;reel.style.overflowX='hidden';}applyT(img);}
+    if(now-lastTap<300){if((img._scale||1)>1){img._scale=1;img._x=0;img._y=0;reel.style.overflowX='';img.style.touchAction='';}else{img._scale=2.5;reel.style.overflowX='hidden';img.style.touchAction='none';}applyT(img);}
     lastTap=now;});
 }
 function closeOverlay(){document.getElementById('overlay').classList.remove('show');}
