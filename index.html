@@ -302,8 +302,25 @@
   .vf-chip{flex:0 0 auto;background:rgba(0,0,0,.5);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.22);color:rgba(255,255,255,.85);font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:20px;cursor:pointer;font-family:inherit;white-space:nowrap}
   .vf-chip.on{background:linear-gradient(135deg,var(--orange),var(--green));color:#fff;border-color:transparent}
   .viewer.rest .reel-top{padding-top:64px}
-  .rv-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:12px;font-weight:700;padding:5px 11px;border-radius:20px;cursor:pointer;font-family:inherit;backdrop-filter:blur(4px)}
+  .rv-btn{display:inline-block;margin-top:10px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;cursor:pointer;font-family:inherit;backdrop-filter:blur(4px)}
   .rv-btn.rv-del:hover{border-color:var(--danger)}
+  /* etiquetas tocables (tipo / nota / nombre) para editar sin botón */
+  .rv-tag,.rv-score{cursor:pointer;font-family:inherit}
+  .rv-name{cursor:pointer}
+  .rv-pen{opacity:.55;font-size:.66em;vertical-align:middle;margin-left:2px}
+  /* popup de edición rápida */
+  .qe{position:absolute;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(14px);z-index:7;
+    width:min(360px,92vw);background:rgba(18,18,20,.96);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.16);
+    border-radius:20px;padding:15px 16px;box-shadow:0 16px 46px rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:.2s cubic-bezier(.22,1,.36,1)}
+  .qe.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+  .qe-title{color:rgba(255,255,255,.65);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;margin:0 0 9px}
+  .qe-title.mt{margin-top:15px}
+  .qe-title #qeRateVal{color:var(--orange);text-transform:none;letter-spacing:0;font-size:13px}
+  .qe-courses{display:flex;gap:8px}
+  .qe-c{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:12.5px;font-weight:700;padding:11px 6px;border-radius:12px;cursor:pointer;font-family:inherit;transition:.15s}
+  .qe-c.on{background:linear-gradient(135deg,var(--orange),var(--green));border-color:transparent}
+  .qe #qeRate{width:100%;accent-color:var(--orange);cursor:pointer}
+  .qe-done{margin-top:15px;width:100%;background:#fff;color:#1c2118;border:none;border-radius:12px;padding:12px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}
 
   /* ---- pantalla de información del restaurante ---- */
   .pane-info{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 22px calc(28px + env(safe-area-inset-bottom))}
@@ -460,6 +477,17 @@
   <button class="viewer-close" id="viewerClose">✕</button>
   <div class="viewer-filter" id="viewerFilter"></div>
   <div class="reel" id="viewerReel"></div>
+  <div class="qe" id="qePop">
+    <div class="qe-title">Tipo de plato</div>
+    <div class="qe-courses">
+      <button class="qe-c" data-c="entrante">🥗 Entrante</button>
+      <button class="qe-c" data-c="plato">🍽️ Plato</button>
+      <button class="qe-c" data-c="postre">🍰 Postre</button>
+    </div>
+    <div class="qe-title mt">Nota <span id="qeRateVal"></span></div>
+    <input type="range" id="qeRate" min="0" max="10" step="0.5"/>
+    <button class="qe-done" id="qeDone">Hecho</button>
+  </div>
 </div>
 
 <input type="file" id="importFile" accept="application/json,.json" hidden/>
@@ -1018,47 +1046,72 @@ function openRestFullscreen(id){                                                
   viewerMode='rest';viewerRestId=id;viewerCourse='all';renderViewer(0);
 }
 function openViewer(feed,start){viewerMode='feed';dishFeed=feed;renderViewer(start);}  // "Mis platos" global (menú)
+const COURSE_ORDER={entrante:0,plato:1,postre:2};
 function viewerList(){
   if(viewerMode==='rest'){
     const rec=saved.get(viewerRestId);if(!rec)return[];const p=known.get(viewerRestId)||rec.meta;
-    return rec.dishes.map((d,i)=>({d,p,i})).filter(o=>viewerCourse==='all'||courseKey(o.d.course)===viewerCourse);
+    return rec.dishes.map((d,i)=>({d,p,i}))
+      .sort((a,b)=>COURSE_ORDER[courseKey(a.d.course)]-COURSE_ORDER[courseKey(b.d.course)]);   // entrantes -> platos -> postres
   }
   return dishFeed.map((it,i)=>({d:it.d,p:it.p,i}));
 }
+// resalta el atajo (chip) de la categoría del plato que estás viendo
+function updateActiveChip(){
+  if(viewerMode!=='rest')return;
+  const reel=document.getElementById('viewerReel'),bar=document.getElementById('viewerFilter');
+  const cards=reel.querySelectorAll('.reel-card');if(!cards.length)return;
+  const idx=Math.min(cards.length-1,Math.round(reel.scrollLeft/Math.max(1,reel.clientWidth)));
+  const dc=cards[idx]?cards[idx].dataset.dc:'';
+  bar.querySelectorAll('.vf-chip').forEach(x=>x.classList.toggle('on',x.dataset.c===dc));
+}
+let _vsTimer;
+function onViewerScroll(){clearTimeout(_vsTimer);_vsTimer=setTimeout(updateActiveChip,80);}
 function renderViewer(start){
   const reel=document.getElementById('viewerReel'),bar=document.getElementById('viewerFilter'),v=document.getElementById('viewer');
+  closeQE();
   viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];
   reel.innerHTML='';reel.style.overflowX='';
   v.classList.toggle('rest',viewerMode==='rest');
+  const list=viewerList();
   if(viewerMode==='rest'){
     bar.style.display='flex';
-    bar.innerHTML=[['all','Todos'],['entrante','Entrantes'],['plato','Platos'],['postre','Postres']]
-      .map(([k,l])=>`<button class="vf-chip${viewerCourse===k?' on':''}" data-c="${k}">${l}</button>`).join('');
-    bar.querySelectorAll('.vf-chip').forEach(b=>b.onclick=()=>{viewerCourse=b.dataset.c;renderViewer(0);});
+    const lbl={entrante:'Entrantes',plato:'Platos',postre:'Postres'};
+    const present=['entrante','plato','postre'].filter(k=>list.some(o=>courseKey(o.d.course)===k));
+    bar.innerHTML=present.map(k=>`<button class="vf-chip" data-c="${k}">${lbl[k]}</button>`).join('');
+    bar.querySelectorAll('.vf-chip').forEach(b=>b.onclick=()=>{                   // atajo: salta a la 1ª foto de esa categoría
+      const cards=[...reel.querySelectorAll('.reel-card')];
+      const idx=cards.findIndex(c=>c.dataset.dc===b.dataset.c);
+      if(idx>=0)reel.scrollTo({left:idx*reel.clientWidth,behavior:'smooth'});
+    });
   }else{bar.style.display='none';bar.innerHTML='';}
-  const list=viewerList();
   v.classList.add('show');
-  if(!list.length){reel.innerHTML=`<div class="reel-card novid"><div class="reel-emptybox"><div class="bigemoji">🍽️</div><p>No tienes platos de este tipo aquí.</p></div></div>`;return;}
+  if(!list.length){reel.innerHTML=`<div class="reel-card novid"><div class="reel-emptybox"><div class="bigemoji">🍽️</div><p>No hay platos aquí.</p></div></div>`;return;}
   list.forEach(o=>{
-    const d=o.d,p=o.p,ci=courseInfo(d.course);
-    const card=document.createElement('div');card.className='reel-card';let media='';
+    const d=o.d,p=o.p,ci=courseInfo(d.course),rest=viewerMode==='rest';
+    const card=document.createElement('div');card.className='reel-card';card.dataset.di=o.i;card.dataset.dc=courseKey(d.course);let media='';
     if(dishHasMedia(d)){const url=trackURL(viewerURLs,dishBlob(d));
       media=d.mtype&&d.mtype.startsWith('video')?`<video src="${url}" muted loop playsinline autoplay></video>`:`<img src="${url}"/>`;
     }else{card.classList.add('novid');media=`<div class="bigemoji">${ci.em}</div>`;}
-    const score=typeof d.rating==='number'?`<span class="reel-score">${d.rating.toFixed(1)}/10</span>`:'';
-    const tag=`<span class="reel-tag">${ci.em} ${ci.t}</span>`;
-    const label=viewerMode==='rest'?`${ci.em} ${ci.t}`:`${ci.em} ${ci.t}${p?' · 🍴 '+esc(p.name):''}`;
-    const actions=viewerMode==='rest'?`<button class="rv-btn rv-edit" data-i="${o.i}">✏️ Editar</button><button class="rv-btn rv-del" data-i="${o.i}">🗑</button>`:'';
-    const bottomBtn=viewerMode==='rest'?'':(p?`<button class="reel-goto" data-idx="${o.i}">📍 Ver restaurante</button>`:'');
+    const rtxt=(typeof d.rating==='number'?d.rating.toFixed(1):'—')+'/10';
+    const score=rest?`<button class="reel-score rv-score" data-i="${o.i}">${rtxt} ✎</button>`
+                    :(typeof d.rating==='number'?`<span class="reel-score">${d.rating.toFixed(1)}/10</span>`:'');
+    const tag=rest?`<button class="reel-tag rv-tag" data-i="${o.i}">${ci.em} ${ci.t} ✎</button>`
+                  :`<span class="reel-tag">${ci.em} ${ci.t}</span>`;
+    const label=rest?`${ci.em} ${ci.t}`:`${ci.em} ${ci.t}${p?' · 🍴 '+esc(p.name):''}`;
+    const nameEl=rest?`<h3 class="rv-name" data-i="${o.i}">${esc(d.name)} <span class="rv-pen">✎</span></h3>`:`<h3>${esc(d.name)}</h3>`;
+    const delBtn=rest?`<button class="rv-btn rv-del" data-i="${o.i}">🗑 Eliminar</button>`:'';
+    const bottomBtn=rest?'':(p?`<button class="reel-goto" data-idx="${o.i}">📍 Ver restaurante</button>`:'');
     card.innerHTML=`${media}`+
-      `<div class="reel-top"><span class="reel-count">${label}</span><h3>${esc(d.name)}</h3></div>`+
-      `<div class="reel-bot"><div class="row1">${score}${tag}${actions}</div>${d.desc?`<p class="reel-desc">${esc(d.desc)}</p>`:''}${bottomBtn}</div>`;
+      `<div class="reel-top"><span class="reel-count">${label}</span>${nameEl}</div>`+
+      `<div class="reel-bot"><div class="row1">${score}${tag}</div>${d.desc?`<p class="reel-desc">${esc(d.desc)}</p>`:''}${delBtn}${bottomBtn}</div>`;
     reel.appendChild(card);attachMediaFallback(card,d);
   });
   reel.scrollLeft=(start||0)*reel.clientWidth;
   if(viewerMode==='rest'){
     reel.querySelectorAll('.rv-del').forEach(b=>b.onclick=()=>viewerDelete(+b.dataset.i));
-    reel.querySelectorAll('.rv-edit').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;closeViewer();editDish(viewerRestId,i);});
+    reel.querySelectorAll('.rv-tag,.rv-score').forEach(b=>b.onclick=()=>openQE(+b.dataset.i));
+    reel.querySelectorAll('.rv-name').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;closeViewer();editDish(viewerRestId,i);});
+    updateActiveChip();
   }else{
     reel.querySelectorAll('.reel-goto').forEach(b=>b.onclick=()=>{const it=dishFeed[+b.dataset.idx];closeViewer();closeOverlay();if(it&&it.p){map.setView([it.p.lat,it.p.lng],17);openPanel(it.p.id);}});
   }
@@ -1068,7 +1121,32 @@ async function viewerDelete(i){
   const rec=saved.get(viewerRestId);
   if(!rec||!rec.dishes.length){closeViewer();}else renderViewer(0);
 }
-function closeViewer(){document.getElementById('viewer').classList.remove('show');const r=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];r.innerHTML='';r.style.overflowX='';}
+/* edición rápida tocando el tipo o la nota (sin botón de editar) */
+let qeIndex=null;
+function saveRest(){const rec=saved.get(viewerRestId);if(rec)DB.put(rec);}
+function openQE(i){
+  const rec=saved.get(viewerRestId);if(!rec)return;const d=rec.dishes[i];if(!d)return;
+  qeIndex=i;
+  document.querySelectorAll('#qePop .qe-c').forEach(b=>b.classList.toggle('on',b.dataset.c===courseKey(d.course)));
+  const r=typeof d.rating==='number'?d.rating:7;
+  document.getElementById('qeRate').value=r;document.getElementById('qeRateVal').textContent=r.toFixed(1)+' / 10';
+  document.getElementById('qePop').classList.add('show');
+}
+function closeQE(){const p=document.getElementById('qePop');if(p)p.classList.remove('show');qeIndex=null;}
+function updateCardMeta(i){
+  const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[i];if(!d)return;const ci=courseInfo(d.course);
+  const card=document.querySelector('#viewerReel .reel-card[data-di="'+i+'"]');
+  if(card){
+    card.dataset.dc=courseKey(d.course);
+    const tag=card.querySelector('.rv-tag');if(tag)tag.innerHTML=`${ci.em} ${ci.t} ✎`;
+    const sc=card.querySelector('.rv-score');if(sc)sc.innerHTML=`${typeof d.rating==='number'?d.rating.toFixed(1):'—'}/10 ✎`;
+    const lbl=card.querySelector('.reel-count');if(lbl)lbl.textContent=`${ci.em} ${ci.t}`;
+    if(!dishHasMedia(d)){const em=card.querySelector('.bigemoji');if(em)em.textContent=ci.em;}
+  }
+  updateActiveChip();
+  if(current===viewerRestId)renderScores(current);
+}
+function closeViewer(){closeQE();document.getElementById('viewer').classList.remove('show');const r=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];r.innerHTML='';r.style.overflowX='';}
 /* pinch-zoom + doble toque + arrastre sobre la foto del visor */
 function applyT(img){img.style.transform=`translate(${img._x||0}px,${img._y||0}px) scale(${img._scale||1})`;}
 function setupZoom(){
@@ -1234,6 +1312,17 @@ function wire(){
   document.getElementById('addBack').onclick=()=>{if(current){renderInfo(current);renderDishes(current);}showPane(hasDishes(current)?'dishes':'info');};
   document.getElementById('viewerClose').onclick=closeViewer;
   document.getElementById('fsBtn').onclick=openRestViewer;
+  document.getElementById('viewerReel').addEventListener('scroll',onViewerScroll,{passive:true});
+  document.querySelectorAll('#qePop .qe-c').forEach(b=>b.onclick=()=>{
+    if(qeIndex==null)return;const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[qeIndex];if(!d)return;
+    d.course=b.dataset.c;saveRest();
+    document.querySelectorAll('#qePop .qe-c').forEach(x=>x.classList.toggle('on',x===b));
+    updateCardMeta(qeIndex);
+  });
+  const qr=document.getElementById('qeRate');
+  qr.oninput=()=>{if(qeIndex==null)return;const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[qeIndex];if(!d)return;const val=parseFloat(qr.value);d.rating=val;document.getElementById('qeRateVal').textContent=val.toFixed(1)+' / 10';updateCardMeta(qeIndex);};
+  qr.onchange=saveRest;
+  document.getElementById('qeDone').onclick=closeQE;
   setupZoom();
 }
 
