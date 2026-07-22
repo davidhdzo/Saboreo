@@ -442,8 +442,19 @@ function initMap(){
   map.on('click',onMapClick);
   map.on('moveend zoomend',scheduleRefresh);
 }
-let _rvTimer;
-function scheduleRefresh(){clearTimeout(_rvTimer);_rvTimer=setTimeout(refreshVisible,60);}
+let _rvTimer,_lastRefreshCenter=null,_lastRefreshZoom=null;
+function scheduleRefresh(){clearTimeout(_rvTimer);_rvTimer=setTimeout(maybeRefresh,60);}
+// solo recolocamos los restaurantes si el mapa se ha movido una distancia razonable en pantalla
+// (así un pequeño desplazamiento no reorganiza todos los puntos). Un cambio de zoom siempre refresca.
+function maybeRefresh(){
+  const z=map.getZoom(),c=map.getCenter();
+  if(_lastRefreshCenter!=null&&z===_lastRefreshZoom){
+    const p0=map.latLngToContainerPoint(_lastRefreshCenter),p1=map.latLngToContainerPoint(c);
+    const moved=Math.hypot(p1.x-p0.x,p1.y-p0.y),sz=map.getSize();
+    if(moved<Math.max(130,Math.min(sz.x,sz.y)*0.45))return;   // movimiento pequeño -> no tocar los puntos
+  }
+  refreshVisible();
+}
 function makeIcon(p){
   const hl=p.id===highlightId;
   const hasDishes=saved.has(p.id)&&saved.get(p.id).dishes.length>0;
@@ -467,6 +478,7 @@ function hasDishes(id){const r=saved.get(id);return !!(r&&r.dishes.length>0);}
 function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
   const z=map.getZoom(),hint=document.getElementById('zoomHint');
+  _lastRefreshCenter=map.getCenter();_lastRefreshZoom=z;
   if(visitedMode){   // todos los sitios visitados, cerca o lejos, a cualquier zoom
     hint.classList.remove('show');
     PLACES.filter(p=>hasDishes(p.id)).forEach(p=>addMarker(p,true));
