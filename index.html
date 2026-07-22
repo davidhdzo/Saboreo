@@ -40,6 +40,9 @@
   .pin i{position:absolute;inset:0;border-radius:50%;background:var(--orange);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
   .pin .ring{position:absolute;inset:-5px;border-radius:50%;border:1.5px solid;animation:pulse 2.4s infinite ease-out}
   @keyframes pulse{0%{transform:scale(.7);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+  /* pin con el logo de Saboreo para los sitios a los que has ido */
+  .pin-logo{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--orange),var(--green));border:2px solid #fff;box-shadow:0 0 0 2px rgba(31,174,90,.22),0 2px 7px rgba(0,0,0,.32);display:grid;place-items:center}
+  .pin-logo svg{width:15px;height:15px;display:block}
 
   .leaflet-tooltip.lbl{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;
     box-shadow:var(--shadow-sm);color:var(--txt);font-size:11px;font-weight:600;padding:3px 8px;white-space:nowrap;backdrop-filter:blur(4px)}
@@ -311,6 +314,14 @@
   .bigbtn.primary:hover{filter:brightness(1.05)}
   .info-hint{text-align:center;color:var(--txt-dim);font-size:12.5px;margin:4px 0 0}
   .info-scores{margin-top:18px}
+  /* asignar tipo de cocina */
+  .info-cuisine{margin-top:22px}
+  .info-cuisine label{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--txt-dim);font-weight:700;margin:0 0 10px}
+  .ccpick{display:flex;flex-wrap:wrap;gap:8px}
+  .ccchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:11px;padding:7px 11px;font-size:12.5px;font-weight:600;color:var(--txt);cursor:pointer;font-family:inherit;transition:.16s}
+  .ccchip span{font-size:15px;line-height:1}
+  .ccchip:hover{border-color:var(--cc,var(--orange))}
+  .ccchip.on{color:#fff;border-color:transparent;background:var(--cc,var(--orange))}
 
   /* volver dentro de las sub-pantallas */
   .pane-back{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--txt-dim);font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;padding:0 0 14px;margin:0}
@@ -505,6 +516,12 @@ const favorites=new Set(JSON.parse(localStorage.getItem('saboreo_favs')||'[]'));
 function saveFavs(){localStorage.setItem('saboreo_favs',JSON.stringify([...favorites]));}
 const visited=new Set(JSON.parse(localStorage.getItem('saboreo_visited')||'[]'));  // "He ido" (aunque no haya platos)
 function saveVisited(){localStorage.setItem('saboreo_visited',JSON.stringify([...visited]));}
+const ckeyOverrides=JSON.parse(localStorage.getItem('saboreo_ckey')||'{}');        // tipo de cocina asignado a mano
+function saveCkeyOverrides(){localStorage.setItem('saboreo_ckey',JSON.stringify(ckeyOverrides));}
+// aplica los tipos de cocina que hayas asignado tú a los restaurantes ya cargados
+function applyCkeyOverrides(){for(const k in ckeyOverrides){let p=known.get(k);if(!p&&/^\d+$/.test(k))p=known.get(+k);if(p)p.ckey=ckeyOverrides[k]||null;}}
+// logo de Saboreo (para los pines de sitios a los que has ido)
+const LOGO_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v7a3 3 0 0 0 6 0V3M6 3v18M18 3c-2 0-3 2-3 5s1 4 3 4 3-1 3-4-1-5-3-5zM18 12v9"/></svg>';
 function norm(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}
 
 /* map */
@@ -530,20 +547,26 @@ function maybeRefresh(){
 }
 function makeIcon(p){
   const hl=p.id===highlightId;
-  const been=isVisited(p.id);
-  const isFav=favorites.has(p.id);
-  const col=hl?'#2f7bff':(been?'#1fae5a':colorForPlace(p));   // azul si es el buscado, verde si has ido
-  const ring=(hl||been||isFav)?`<span class="ring" style="border-color:${hexA(col,.6)}"></span>`:'';
+  if(hl){                                                    // el buscado: pin azul destacado
+    const col='#2f7bff';
+    const dot=`<i style="background:${col};box-shadow:0 0 0 2px ${hexA(col,.18)},0 1px 4px rgba(0,0,0,.25)"></i>`;
+    const ring=`<span class="ring" style="border-color:${hexA(col,.6)}"></span>`;
+    return L.divIcon({className:'',html:`<div class="pin hl">${dot}${ring}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
+  }
+  if(isVisited(p.id)){                                       // sitios a los que HAS IDO: pin con el logo de Saboreo
+    return L.divIcon({className:'',html:`<div class="pin-logo">${LOGO_SVG}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
+  }
+  const col=colorForPlace(p);                                // el resto: punto del color de su tipo de cocina
+  const ring=favorites.has(p.id)?`<span class="ring" style="border-color:${hexA(col,.6)}"></span>`:'';
   const dot=`<i style="background:${col};box-shadow:0 0 0 2px ${hexA(col,.18)},0 1px 4px rgba(0,0,0,.25)"></i>`;
-  const sz=hl?26:14;
-  return L.divIcon({className:'',html:`<div class="pin${hl?' hl':''}">${dot}${ring}</div>`,iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
+  return L.divIcon({className:'',html:`<div class="pin">${dot}${ring}</div>`,iconSize:[14,14],iconAnchor:[7,7]});
 }
 function addMarker(p,label){
   const been=isVisited(p.id);
   const m=L.marker([p.lat,p.lng],{icon:makeIcon(p),keyboard:false});
   m.on('click',e=>{L.DomEvent.stopPropagation(e);openPanel(p.id);});
   const hl=p.id===highlightId;
-  if(label)m.bindTooltip(p.name,{permanent:true,interactive:true,direction:'top',className:'lbl'+(hl?' is-hl':(been?' is-saved':'')),offset:[0,hl?-16:-7]});
+  if(label)m.bindTooltip(p.name,{permanent:true,interactive:true,direction:'top',className:'lbl'+(hl?' is-hl':(been?' is-saved':'')),offset:[0,hl?-16:(been?-14:-7)]});
   m.addTo(markerLayer);markers.set(p.id,m);
 }
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
@@ -665,6 +688,8 @@ function renderInfo(id){
     acts=`<button class="bigbtn primary" id="actAdd">➕ Añadir un plato</button>`+
          `<p class="info-hint">Aún no has guardado platos de este sitio.</p>`;
   }
+  const ccChips=CUISINES.map(c=>`<button class="ccchip${p.ckey===c.key?' on':''}" data-k="${c.key}" style="--cc:${c.color}"><span>${c.em}</span>${c.label}</button>`).join('')+
+    `<button class="ccchip${!p.ckey?' on':''}" data-k=""><span>🍴</span>Otro</button>`;
   document.getElementById('infoWrap').innerHTML=
     `<div class="info-card"><div class="info-emoji">${em}</div>`+
       `<div class="info-meta"><b>${esc(p.name)}</b>`+
@@ -674,11 +699,23 @@ function renderInfo(id){
       `<button class="stbtn been${been?' on':''}" id="stBeen"><span>😋</span>${been?'Has ido aquí':'He ido'}</button>`+
       `<button class="stbtn want${wish?' on':''}" id="stWant"><span>⭐</span>${wish?'En "Quiero ir"':'Quiero ir'}</button>`+
     `</div>`+
-    `<div class="info-actions">${acts}</div>`;
+    `<div class="info-actions">${acts}</div>`+
+    `<div class="info-cuisine"><label>Tipo de cocina</label><div class="ccpick" id="ccPick">${ccChips}</div></div>`;
   document.getElementById('stBeen').onclick=()=>toggleBeen(id);
   document.getElementById('stWant').onclick=()=>toggleWant(id);
+  document.querySelectorAll('#ccPick .ccchip').forEach(b=>b.onclick=()=>setCuisine(id,b.dataset.k||null));
   const av=document.getElementById('actView');if(av)av.onclick=()=>{renderDishes(id);showPane('dishes');};
   const aa=document.getElementById('actAdd');if(aa)aa.onclick=()=>{clearForm();showPane('add');};
+}
+/* asignar/quitar el tipo de cocina de un restaurante */
+function setCuisine(id,key){
+  const p=known.get(id);if(!p)return;
+  p.ckey=key||null;
+  if(key)ckeyOverrides[id]=key;else delete ckeyOverrides[id];
+  saveCkeyOverrides();
+  if(current===id)renderInfo(id);
+  refreshVisible();
+  toast(key?('Tipo: '+((CUISINES.find(c=>c.key===key)||{}).label||key)):'Tipo quitado');
 }
 
 /* estrella del panel = atajo de "Quiero ir" */
@@ -1042,7 +1079,7 @@ async function exportData(){
     }
     places.push({id:r.id,meta:r.meta,dishes});
   }
-  const data={app:'saboreo',version:1,exported:Date.now(),favorites:[...favorites],visited:[...visited],places};
+  const data={app:'saboreo',version:1,exported:Date.now(),favorites:[...favorites],visited:[...visited],ckeys:ckeyOverrides,places};
   const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download='saboreo-backup-'+new Date().toISOString().slice(0,10)+'.json';
@@ -1067,6 +1104,7 @@ async function importData(file){
     }
     if(Array.isArray(data.favorites)){data.favorites.forEach(f=>favorites.add(f));saveFavs();}
     if(Array.isArray(data.visited)){data.visited.forEach(v=>visited.add(v));saveVisited();}
+    if(data.ckeys&&typeof data.ckeys==='object'){Object.assign(ckeyOverrides,data.ckeys);saveCkeyOverrides();applyCkeyOverrides();}
     refreshVisible();closeOverlay();toast('Copia importada ✓');
   }catch(e){toast('Archivo no válido');}
 }
@@ -1132,6 +1170,7 @@ async function boot(){
   await DB.open();
   const stored=await DB.all();
   stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
+  applyCkeyOverrides();
   refreshVisible();
   const l=document.getElementById('loader');
   document.getElementById('loaderTxt').textContent=`${PLACES.length.toLocaleString('es')} restaurantes listos`;
