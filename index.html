@@ -92,6 +92,38 @@
   .dock .add:hover{color:#fff;filter:brightness(1.05)}
   .dock .add.active{background:var(--danger)}
 
+  /* ---- selector de mapas (Saboreo) ---- */
+  .mapmodes{position:absolute;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:600;width:min(344px,88vw)}
+  .mode-current{width:100%;display:flex;align-items:center;gap:13px;cursor:pointer;font-family:inherit;
+    background:linear-gradient(135deg,var(--orange),var(--green));color:#fff;border:none;border-radius:22px;
+    padding:12px 17px;box-shadow:0 12px 34px rgba(255,122,26,.36);transition:.2s}
+  .mode-current:hover{filter:brightness(1.05)}
+  .mode-current:active{transform:scale(.985)}
+  .mode-current .mc-em{font-size:27px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.22))}
+  .mode-current .mc-tx{flex:1;min-width:0;text-align:left;display:flex;flex-direction:column;gap:1px}
+  .mode-current .mc-tx b{font-size:16px;font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mode-current .mc-tx small{font-size:11px;opacity:.92;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mode-current .mc-chev{font-size:15px;transition:.25s;opacity:.9}
+  .mapmodes.open .mc-chev{transform:rotate(180deg)}
+
+  .mode-pop{position:absolute;left:0;right:0;bottom:calc(100% + 11px);
+    background:rgba(255,255,255,.98);backdrop-filter:blur(16px);border:1px solid var(--line);border-radius:22px;
+    box-shadow:var(--shadow);padding:8px;opacity:0;pointer-events:none;transform:translateY(12px) scale(.97);transform-origin:bottom center;transition:.22s cubic-bezier(.22,1,.36,1)}
+  .mapmodes.open .mode-pop{opacity:1;pointer-events:auto;transform:translateY(0) scale(1)}
+  .mode-pop .mp-head{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--txt-dim);font-weight:800;padding:9px 12px 11px}
+  .mode-pop .mp-head b{font-weight:800}.mode-pop .mp-head b span{color:var(--orange)}
+  .mode-opt{display:flex;align-items:center;gap:13px;width:100%;background:none;border:none;cursor:pointer;font-family:inherit;
+    padding:11px 12px;border-radius:15px;text-align:left;transition:.14s;color:var(--txt)}
+  .mode-opt:hover{background:var(--surface-2)}
+  .mode-opt .mo-em{font-size:24px;line-height:1;width:36px;text-align:center;flex-shrink:0}
+  .mode-opt .mo-tx{display:flex;flex-direction:column;min-width:0;gap:1px}
+  .mode-opt .mo-tx b{font-size:14.5px;font-weight:700}
+  .mode-opt .mo-tx small{font-size:11.5px;color:var(--txt-dim);font-weight:500}
+  .mode-opt.on{background:linear-gradient(135deg,rgba(255,122,26,.15),rgba(31,174,90,.15))}
+  .mode-opt.on .mo-tx b{color:var(--orange-d)}
+  .mode-opt .mo-check{margin-left:auto;color:var(--green-d);font-weight:800;opacity:0;transition:.14s}
+  .mode-opt.on .mo-check{opacity:1}
+
   /* cuisine popover */
   .cuisines{position:absolute;left:50%;bottom:calc(102px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(10px);z-index:600;
     background:rgba(255,255,255,.98);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:var(--shadow);
@@ -279,7 +311,7 @@
 
 <div class="menupop" id="menuPop">
   <button data-act="places"><span>📖</span> Mis sitios</button>
-  <button data-act="favs"><span>⭐</span> Favoritos</button>
+  <button data-act="favs"><span>⭐</span> Quiero ir</button>
   <button data-act="dishes"><span>📸</span> Mis platos</button>
   <div class="mp-sep"></div>
   <button data-act="settings"><span>⚙️</span> Ajustes</button>
@@ -297,10 +329,24 @@
   <button class="clear" id="clearCuisine">Ver todo</button>
 </div>
 
+<!-- selector de mapas -->
+<div class="mapmodes" id="mapModes">
+  <div class="mode-pop" id="modePop">
+    <div class="mp-head"><b>Sabor<span>eo</span></b> · tus mapas</div>
+    <button class="mode-opt on" data-mode="all"><span class="mo-em">🗺️</span><span class="mo-tx"><b>Explorar</b><small>Todos los restaurantes</small></span><span class="mo-check">✓</span></button>
+    <button class="mode-opt" data-mode="eaten"><span class="mo-em">😋</span><span class="mo-tx"><b>He comido aquí</b><small>Los sitios que has saboreado</small></span><span class="mo-check">✓</span></button>
+    <button class="mode-opt" data-mode="wishlist"><span class="mo-em">⭐</span><span class="mo-tx"><b>Quiero ir</b><small>Tu lista de pendientes</small></span><span class="mo-check">✓</span></button>
+  </div>
+  <button class="mode-current" id="modeCurrent">
+    <span class="mc-em" id="modeEm">🗺️</span>
+    <span class="mc-tx"><b id="modeLabel">Explorar</b><small id="modeSub">Todos los restaurantes</small></span>
+    <span class="mc-chev">▾</span>
+  </button>
+</div>
+
 <!-- bottom dock -->
 <div class="dock">
   <button id="dCuisine"><span class="ic">🍽️</span><span class="lb">Cocina</span></button>
-  <button id="dVisited"><span class="ic">📌</span><span class="lb">Visitados</span></button>
   <button id="dNear"><span class="ic">📍</span><span class="lb">Cerca</span></button>
   <div class="sep"></div>
   <button id="dAdd" class="add"><span class="ic">＋</span><span class="lb">Añadir</span></button>
@@ -310,7 +356,7 @@
 <aside class="panel" id="panel">
   <div class="panel-head">
     <button class="close" id="closePanel">✕</button>
-    <button class="favstar" id="favStar" title="Favorito">☆</button>
+    <button class="favstar" id="favStar" title="Quiero ir aquí">☆</button>
     <div class="cat" id="pCat">RESTAURANTE</div>
     <h2 id="pName">—</h2>
     <div class="addr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span id="pAddr">Madrid</span></div>
@@ -427,7 +473,13 @@ const DB={db:null,
   all(){return new Promise(res=>{const t=this.db.transaction('places','readonly');const q=t.objectStore('places').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);});}
 };
 
-let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,favMode=false,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='comida',visitedMode=false;
+let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='comida',mapMode='all';
+// los 3 "mapas" de Saboreo:  all = explorar todos · eaten = donde he comido · wishlist = quiero ir
+const MODE_INFO={
+  all:{em:'🗺️',t:'Explorar',s:'Todos los restaurantes'},
+  eaten:{em:'😋',t:'He comido aquí',s:'Los sitios que has saboreado'},
+  wishlist:{em:'⭐',t:'Quiero ir',s:'Tu lista de pendientes'}
+};
 const saved=new Map(),known=new Map();
 let PLACES=[];
 const favorites=new Set(JSON.parse(localStorage.getItem('saboreo_favs')||'[]'));
@@ -479,16 +531,16 @@ function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
   const z=map.getZoom(),hint=document.getElementById('zoomHint');
   _lastRefreshCenter=map.getCenter();_lastRefreshZoom=z;
-  if(visitedMode){   // todos los sitios visitados, cerca o lejos, a cualquier zoom
+  if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
     hint.classList.remove('show');
-    PLACES.filter(p=>hasDishes(p.id)).forEach(p=>addMarker(p,true));
+    const inSet=mapMode==='eaten'?(p=>hasDishes(p.id)):(p=>favorites.has(p.id));
+    PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine)).forEach(p=>addMarker(p,true));
     return;
   }
   const b=map.getBounds(),c=map.getCenter();
-  const filtered=!!activeCuisine||favMode;               // si hay un filtro activo, mostramos esos sitios a cualquier zoom
+  const filtered=!!activeCuisine;                        // si hay filtro de cocina, mostramos esos sitios a cualquier zoom
   let vis=PLACES.filter(p=>{
     if(!b.contains([p.lat,p.lng]))return false;
-    if(favMode&&!favorites.has(p.id))return false;
     if(activeCuisine&&p.ckey!==activeCuisine)return false;
     return true;
   });
@@ -570,7 +622,7 @@ function toggleFav(){
   saveFavs();
   const fs=document.getElementById('favStar');
   fs.classList.toggle('on',favorites.has(current));fs.textContent=favorites.has(current)?'★':'☆';
-  refreshVisible();toast(favorites.has(current)?'Añadido a favoritos ⭐':'Quitado de favoritos');
+  refreshVisible();toast(favorites.has(current)?'Añadido a "Quiero ir" ⭐':'Quitado de "Quiero ir"');
 }
 function calcScores(id){
   const rec=saved.get(id),out={comida:null,postre:null,global:null,n:0};
@@ -728,31 +780,26 @@ function selectCuisine(key){
   refreshVisible();
   if(activeCuisine){const c=CUISINES.find(c=>c.key===activeCuisine);toast(`Mostrando: ${c.label}`);}
 }
-function toggleCuisinePop(){document.getElementById('cuisines').classList.toggle('show');}
+function toggleCuisinePop(){document.getElementById('cuisines').classList.toggle('show');document.getElementById('mapModes').classList.remove('open');}
 
-/* visitados: mostrar en el mapa todos los sitios a los que he ido */
-function toggleVisited(){
-  const vs=PLACES.filter(p=>saved.has(p.id)&&saved.get(p.id).dishes.length>0);
-  visitedMode=!visitedMode;
-  if(visitedMode&&!vs.length){visitedMode=false;toast('Aún no has guardado ningún sitio 🍽️');return;}
-  if(visitedMode){favMode=false;}
-  document.getElementById('dVisited').classList.toggle('active',visitedMode);
+/* cambiar de "mapa": explorar / he comido / quiero ir */
+function setMapMode(mode){
+  if(!MODE_INFO[mode])return;
+  mapMode=mode;
+  const info=MODE_INFO[mode];
+  document.getElementById('modeEm').textContent=info.em;
+  document.getElementById('modeLabel').textContent=info.t;
+  document.getElementById('modeSub').textContent=info.s;
+  document.querySelectorAll('.mode-opt').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));
+  document.getElementById('mapModes').classList.remove('open');
   refreshVisible();
-  if(visitedMode){
-    const g=L.featureGroup(vs.map(p=>L.marker([p.lat,p.lng])));
-    map.fitBounds(g.getBounds().pad(.3),{maxZoom:16});
-    toast(`${vs.length} sitio${vs.length>1?'s':''} visitado${vs.length>1?'s':''} 📌`);
-  }
-}
-
-/* favoritos mode */
-function toggleFavMode(){
-  favMode=!favMode;if(favMode){visitedMode=false;document.getElementById('dVisited').classList.remove('active');}refreshVisible();
-  if(favMode){
-    const favs=PLACES.filter(p=>favorites.has(p.id));
-    if(!favs.length){toast('Aún no tienes favoritos ⭐');}
-    else{const g=L.featureGroup(favs.map(p=>L.marker([p.lat,p.lng])));map.fitBounds(g.getBounds().pad(.3),{maxZoom:16});toast(`${favs.length} favoritos`);}
-  }
+  if(mode==='all')return;
+  const set=PLACES.filter(mode==='eaten'?(p=>hasDishes(p.id)):(p=>favorites.has(p.id)));
+  if(!set.length){toast(mode==='eaten'?'Aún no has comido en ningún sitio 😋':'Tu lista "Quiero ir" está vacía ⭐');return;}
+  const g=L.featureGroup(set.map(p=>L.marker([p.lat,p.lng])));
+  map.fitBounds(g.getBounds().pad(.3),{maxZoom:16});
+  const n=set.length;
+  toast(mode==='eaten'?`${n} sitio${n>1?'s':''} probado${n>1?'s':''} 😋`:`${n} sitio${n>1?'s':''} por visitar ⭐`);
 }
 
 /* mis platos overlay */
@@ -829,7 +876,7 @@ function closeOverlay(){document.getElementById('overlay').classList.remove('sho
 /* menú desplegable ☰ */
 function menuAction(a){
   if(a==='places')openPlacesSheet();
-  else if(a==='favs')toggleFavMode();
+  else if(a==='favs')setMapMode('wishlist');
   else if(a==='dishes')openDishesSheet();
   else if(a==='settings')openSettings();
 }
@@ -954,9 +1001,12 @@ function wire(){
   document.getElementById('dRate').oninput=e=>document.getElementById('rateVal').textContent=parseFloat(e.target.value).toFixed(1);
   document.getElementById('dCuisine').onclick=toggleCuisinePop;
   document.getElementById('clearCuisine').onclick=()=>{activeCuisine=null;document.querySelectorAll('#cwrap .c').forEach(el=>{el.classList.remove('on');el.style.background='';el.style.borderColor='';el.style.color='';});document.getElementById('dCuisine').classList.remove('active');document.getElementById('cuisines').classList.remove('show');refreshVisible();};
-  document.getElementById('dVisited').onclick=toggleVisited;
   document.getElementById('dNear').onclick=nearMe;
   document.getElementById('dAdd').onclick=toggleAddMode;
+  const mm=document.getElementById('mapModes');
+  document.getElementById('modeCurrent').onclick=e=>{e.stopPropagation();mm.classList.toggle('open');document.getElementById('cuisines').classList.remove('show');};
+  document.querySelectorAll('.mode-opt').forEach(b=>b.onclick=()=>setMapMode(b.dataset.mode));
+  document.addEventListener('click',e=>{if(!e.target.closest('#mapModes'))mm.classList.remove('open');});
   const menuPop=document.getElementById('menuPop');
   document.getElementById('menuBtn').onclick=e=>{e.stopPropagation();menuPop.classList.toggle('show');};
   menuPop.querySelectorAll('button').forEach(b=>b.onclick=()=>{menuPop.classList.remove('show');menuAction(b.dataset.act);});
