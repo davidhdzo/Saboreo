@@ -386,6 +386,17 @@ const MIN_ZOOM=15;    // por debajo: no se muestran puntos
 const LABEL_ZOOM=18;  // desde aquí: aparecen los nombres solos (solo muy cerca)
 const MAX_MARKERS=140;// máx puntos a la vez (fluidez)
 const MAX_LABELS=32;  // máx nombres a la vez (no saturar)
+const POI_MIN_ZOOM=14;// con menos zoom SOLO se ven los sitios a los que has ido; el resto aparece al acercarte
+// tamaño (px) de la celda de la rejilla de pines según el zoom:
+// menos zoom => celdas grandes => pocos puntos; más zoom => celdas pequeñas => van apareciendo el resto poco a poco
+function pinCellPx(z){
+  if(z>=19)return 48;
+  if(z>=18)return 62;
+  if(z>=17)return 80;
+  if(z>=16)return 104;
+  if(z>=15)return 134;
+  return 180;          // z==14
+}
 
 const CUISINES=[
   {key:'italiana',label:'Italiana',em:'🍝',color:'#e5484d',match:['italian','pizza','pasta']},
@@ -452,16 +463,17 @@ function addMarker(p,label){
   m.addTo(markerLayer);markers.set(p.id,m);
 }
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
+function hasDishes(id){const r=saved.get(id);return !!(r&&r.dishes.length>0);}
 function refreshVisible(){
   markerLayer.clearLayers();markers.clear();
   const z=map.getZoom(),hint=document.getElementById('zoomHint');
   if(visitedMode){   // todos los sitios visitados, cerca o lejos, a cualquier zoom
     hint.classList.remove('show');
-    PLACES.filter(p=>saved.has(p.id)&&saved.get(p.id).dishes.length>0).forEach(p=>addMarker(p,true));
+    PLACES.filter(p=>hasDishes(p.id)).forEach(p=>addMarker(p,true));
     return;
   }
-  hint.classList.remove('show');
   const b=map.getBounds(),c=map.getCenter();
+  const filtered=!!activeCuisine||favMode;               // si hay un filtro activo, mostramos esos sitios a cualquier zoom
   let vis=PLACES.filter(p=>{
     if(!b.contains([p.lat,p.lng]))return false;
     if(favMode&&!favorites.has(p.id))return false;
@@ -469,37 +481,53 @@ function refreshVisible(){
     return true;
   });
   vis.sort((a,b)=>dist2(a,c)-dist2(b,c));
-  const wide=!!activeCuisine||favMode;
-  const pinW=wide?54:46;                                // rejilla FINA: reparte los pines por TODO el mapa (no un montón en el centro)
-  const labW=wide?165:210, labH=wide?125:160;           // rejilla GRUESA: como mucho un NOMBRE por celda -> pocos y dispersos
+
+  const pinW=filtered?60:pinCellPx(z);                   // rejilla de pines: su tamaño depende del zoom -> revelado progresivo
+  const labW=filtered?165:210, labH=filtered?125:160;    // rejilla GRUESA de nombres: como mucho un NOMBRE por celda
   const pinCells=new Set(),labCells=new Set(),placed=[];
+  // intenta colocar el nombre del sitio evitando solapes; devuelve true si cabe
+  const tryLabel=(p,pt,big)=>{
+    const lk=Math.floor(pt.x/labW)+'_'+Math.floor(pt.y/labH);
+    if(labCells.has(lk))return false;
+    const w=Math.min(big?210:190,p.name.length*(big?7:6.6)+(big?24:16));
+    const box=big?{x1:pt.x-w/2-6,y1:pt.y-42,x2:pt.x+w/2+6,y2:pt.y+16}
+                 :{x1:pt.x-w/2-3,y1:pt.y-31,x2:pt.x+w/2+3,y2:pt.y-7};
+    if(placed.some(bx=>!(box.x2<bx.x1||box.x1>bx.x2||box.y2<bx.y1||box.y1>bx.y2)))return false;
+    labCells.add(lk);placed.push(box);return true;
+  };
+
   if(highlightId){                                       // el buscado: siempre visible con su nombre
     const p=vis.find(x=>x.id===highlightId);
     if(p){
       const pt=map.latLngToContainerPoint([p.lat,p.lng]);
       pinCells.add(Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW));
-      labCells.add(Math.floor(pt.x/labW)+'_'+Math.floor(pt.y/labH));
-      const w=Math.min(210,p.name.length*7+24);
-      placed.push({x1:pt.x-w/2-6,y1:pt.y-42,x2:pt.x+w/2+6,y2:pt.y+16});
+      tryLabel(p,pt,true);
       addMarker(p,true);
     }
   }
-  let shown=0;
-  for(const p of vis.slice(0,3000)){
-    if(shown>=260)break;
-    if(p.id===highlightId)continue;
+
+  // 1) los sitios a los que HAS IDO: siempre visibles, a cualquier zoom (incluso con poco zoom)
+  for(const p of vis){
+    if(p.id===highlightId||!hasDishes(p.id))continue;
     const pt=map.latLngToContainerPoint([p.lat,p.lng]);
-    const pk=Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW);
-    if(pinCells.has(pk))continue;                        // ya hay un pin en esa zona -> repartir por el mapa
-    pinCells.add(pk);shown++;
-    let label=false;
-    const lk=Math.floor(pt.x/labW)+'_'+Math.floor(pt.y/labH);
-    if(!labCells.has(lk)){
-      const w=Math.min(190,p.name.length*6.6+16),h=20;
-      const box={x1:pt.x-w/2-3,y1:pt.y-h-11,x2:pt.x+w/2+3,y2:pt.y-7};
-      if(!placed.some(bx=>!(box.x2<bx.x1||box.x1>bx.x2||box.y2<bx.y1||box.y1>bx.y2))){labCells.add(lk);placed.push(box);label=true;}
+    pinCells.add(Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW));
+    addMarker(p,tryLabel(p,pt,false));
+  }
+
+  // 2) el RESTO de restaurantes: solo con suficiente zoom; van apareciendo al acercarte
+  const showRest=filtered||z>=POI_MIN_ZOOM;
+  hint.classList.toggle('show',!showRest);
+  if(showRest){
+    let shown=0;
+    for(const p of vis){
+      if(shown>=260)break;
+      if(p.id===highlightId||hasDishes(p.id))continue;
+      const pt=map.latLngToContainerPoint([p.lat,p.lng]);
+      const pk=Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW);
+      if(pinCells.has(pk))continue;                      // ya hay un pin en esa celda -> repartir por el mapa
+      pinCells.add(pk);shown++;
+      addMarker(p,tryLabel(p,pt,false));
     }
-    addMarker(p,label);
   }
 }
 
