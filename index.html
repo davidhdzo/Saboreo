@@ -319,7 +319,15 @@
   .qe-courses{display:flex;gap:8px}
   .qe-c{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:12.5px;font-weight:700;padding:11px 6px;border-radius:12px;cursor:pointer;font-family:inherit;transition:.15s}
   .qe-c.on{background:linear-gradient(135deg,var(--orange),var(--green));border-color:transparent}
+  .qe-fit{display:flex;gap:8px}
+  .qe-f{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:12.5px;font-weight:700;padding:11px 6px;border-radius:12px;cursor:pointer;font-family:inherit;transition:.15s}
+  .qe-f.on{background:linear-gradient(135deg,var(--orange),var(--green));border-color:transparent}
   .qe #qeRate{width:100%;accent-color:var(--orange);cursor:pointer}
+  /* toggle de encuadre en el formulario de añadir */
+  .fitrow{margin-top:14px}
+  .fitrow>label{display:block;font-size:11.5px;color:var(--txt-dim);margin:0 0 8px;font-weight:600}
+  .fitbtn{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--txt-dim);font-family:inherit;transition:.16s}
+  .fitbtn.on{background:var(--surface-2);border-color:var(--orange);color:var(--orange-d)}
   .qe-done{margin-top:15px;width:100%;background:#fff;color:#1c2118;border:none;border-radius:12px;padding:12px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}
 
   /* ---- pantalla de información del restaurante ---- */
@@ -459,6 +467,13 @@
           <input type="range" id="dRate" min="0" max="10" step="0.5" value="7"/>
         </div>
       </div>
+      <div class="fitrow">
+        <label>Cómo se ve la foto</label>
+        <div class="seg">
+          <button type="button" class="fitbtn on" data-fit="cover">🖼️ Rellenar</button>
+          <button type="button" class="fitbtn" data-fit="contain">🔲 Completa</button>
+        </div>
+      </div>
       <button class="save" id="saveDish" disabled>Guardar plato</button>
     </div>
     </div>
@@ -484,6 +499,13 @@
       <button class="qe-c" data-c="entrante">🥗 Entrante</button>
       <button class="qe-c" data-c="plato">🍽️ Plato</button>
       <button class="qe-c" data-c="postre">🍰 Postre</button>
+    </div>
+    <div id="qeFitWrap">
+      <div class="qe-title mt">Cómo se ve la foto</div>
+      <div class="qe-fit">
+        <button class="qe-f" data-f="cover">🖼️ Rellenar</button>
+        <button class="qe-f" data-f="contain">🔲 Completa</button>
+      </div>
     </div>
     <div class="qe-title mt">Nota <span id="qeRateVal"></span></div>
     <input type="range" id="qeRate" min="0" max="10" step="0.5"/>
@@ -817,6 +839,7 @@ function renderScores(id){
 // se reconstruye un Blob "fresco" cada vez que se van a mostrar
 function dishHasMedia(d){return !!(d&&(d.buf||d.blob));}
 function dishBlob(d){if(!d)return null;if(d.buf)return new Blob([d.buf],{type:d.mtype||''});if(d.blob)return d.blob;return null;}
+function dishFit(d){return d&&d.fit==='contain'?'contain':'cover';}   // encuadre de la foto: rellenar (cover) o completa (contain)
 // tipo de plato: entrante / plato / postre (el antiguo 'comida' se trata como 'plato')
 function courseKey(c){return c==='postre'?'postre':(c==='entrante'?'entrante':'plato');}
 function courseInfo(c){const k=courseKey(c);return k==='postre'?{em:'🍰',t:'Postre'}:k==='entrante'?{em:'🥗',t:'Entrante'}:{em:'🍽️',t:'Plato'};}
@@ -853,10 +876,10 @@ function renderDishes(id){
   reel.innerHTML='';
   dishes.forEach((d,i)=>{
     const card=document.createElement('div');card.className='reel-card';let media='';
-    if(dishHasMedia(d)){const url=trackURL(reelURLs,dishBlob(d));
+    if(dishHasMedia(d)){const url=trackURL(reelURLs,dishBlob(d)),fit=dishFit(d);
       media=d.mtype&&d.mtype.startsWith('video')
-        ?`<video src="${url}" muted loop playsinline autoplay></video>`
-        :`<img src="${url}"/>`;
+        ?`<video src="${url}" style="object-fit:${fit}" muted loop playsinline autoplay></video>`
+        :`<img src="${url}" style="object-fit:${fit}"/>`;
     }else{card.classList.add('novid');media=`<div class="bigemoji">${courseInfo(d.course).em}</div>`;}
     const ci=courseInfo(d.course);
     const score=typeof d.rating==='number'?`<span class="reel-score">${d.rating.toFixed(1)}/10</span>`:'';
@@ -872,7 +895,7 @@ function renderDishes(id){
   reel.querySelectorAll('.reel-edit').forEach(b=>b.onclick=()=>editDish(id,+b.dataset.i));
   reel.scrollLeft=0;
 }
-let editIndex=null,editMedia=null;   // edición de un plato existente (índice + foto/vídeo actual)
+let editIndex=null,editMedia=null,pendingFit='cover';   // edición de un plato existente + encuadre elegido
 function clearForm(){
   editIndex=null;editMedia=null;
   document.getElementById('dName').value='';document.getElementById('dDesc').value='';pendingMedia=null;
@@ -881,6 +904,8 @@ function clearForm(){
   document.getElementById('dRate').value=7;document.getElementById('rateVal').textContent='7.0';
   pendingCourse='plato';
   document.querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on',b.dataset.course==='plato'));
+  pendingFit='cover';
+  document.querySelectorAll('.fitbtn').forEach(b=>b.classList.toggle('on',b.dataset.fit==='cover'));
   document.getElementById('saveDish').textContent='Guardar plato';
   updateSaveBtn();
 }
@@ -891,6 +916,7 @@ function setDropPreview(blob,mtype){
   const url=URL.createObjectURL(blob);
   const media=mtype&&mtype.startsWith('video')?`<video src="${url}" muted loop playsinline autoplay></video>`:`<img src="${url}"/>`;
   dr.classList.add('has');dr.innerHTML=`${media}<span class="redo">Cambiar</span>`;
+  const m=dr.querySelector('img,video');if(m)m.style.objectFit=pendingFit;
 }
 /* editar un plato ya guardado (sin borrarlo): precarga el formulario */
 function editDish(id,i){
@@ -902,6 +928,8 @@ function editDish(id,i){
   document.getElementById('dRate').value=r;document.getElementById('rateVal').textContent=r.toFixed(1);
   pendingCourse=courseKey(d.course);
   document.querySelectorAll('.segbtn').forEach(b=>b.classList.toggle('on',b.dataset.course===pendingCourse));
+  pendingFit=dishFit(d);
+  document.querySelectorAll('.fitbtn').forEach(b=>b.classList.toggle('on',b.dataset.fit===pendingFit));
   setDropPreview(dishBlob(d),d.mtype);
   document.getElementById('saveDish').textContent='Guardar cambios';
   updateSaveBtn();showPane('add');
@@ -914,12 +942,12 @@ async function saveDish(){
   const wasEdit=editIndex!=null&&rec.dishes[editIndex];
   if(wasEdit){
     const d=rec.dishes[editIndex];
-    d.name=name;d.desc=desc;d.course=pendingCourse;d.rating=rating;
+    d.name=name;d.desc=desc;d.course=pendingCourse;d.rating=rating;d.fit=pendingFit;
     if(pendingMedia){d.buf=pendingMedia.buf;d.mtype=pendingMedia.type;delete d.blob;}   // foto/vídeo cambiado
     else if(editMedia){/* se conserva el que ya tenía (d.buf o d.blob) */}
     else{delete d.buf;delete d.blob;delete d.mtype;}                                    // se quitó la foto
   }else{
-    const dish={name,desc,course:pendingCourse,rating,ts:Date.now()};if(pendingMedia){dish.buf=pendingMedia.buf;dish.mtype=pendingMedia.type;}
+    const dish={name,desc,course:pendingCourse,rating,fit:pendingFit,ts:Date.now()};if(pendingMedia){dish.buf=pendingMedia.buf;dish.mtype=pendingMedia.type;}
     rec.dishes.push(dish);
   }
   await DB.put(rec);saved.set(current,rec);
@@ -1105,8 +1133,8 @@ function renderViewer(start){
   list.forEach(o=>{
     const d=o.d,p=o.p,ci=courseInfo(d.course),rest=viewerMode==='rest';
     const card=document.createElement('div');card.className='reel-card';card.dataset.di=o.i;card.dataset.dc=courseKey(d.course);let media='';
-    if(dishHasMedia(d)){const url=trackURL(viewerURLs,dishBlob(d));
-      media=d.mtype&&d.mtype.startsWith('video')?`<video src="${url}" muted loop playsinline autoplay></video>`:`<img src="${url}"/>`;
+    if(dishHasMedia(d)){const url=trackURL(viewerURLs,dishBlob(d)),fit=dishFit(d);
+      media=d.mtype&&d.mtype.startsWith('video')?`<video src="${url}" style="object-fit:${fit}" muted loop playsinline autoplay></video>`:`<img src="${url}" style="object-fit:${fit}"/>`;
     }else{card.classList.add('novid');media=`<div class="bigemoji">${ci.em}</div>`;}
     const rtxt=(typeof d.rating==='number'?d.rating.toFixed(1):'—')+'/10';
     const score=rest?`<button class="reel-score rv-score" data-i="${o.i}">${rtxt} ✎</button>`
@@ -1144,6 +1172,8 @@ function openQE(i){
   const rec=saved.get(viewerRestId);if(!rec)return;const d=rec.dishes[i];if(!d)return;
   qeIndex=i;
   document.querySelectorAll('#qePop .qe-c').forEach(b=>b.classList.toggle('on',b.dataset.c===courseKey(d.course)));
+  document.getElementById('qeFitWrap').style.display=dishHasMedia(d)?'':'none';
+  document.querySelectorAll('#qePop .qe-f').forEach(b=>b.classList.toggle('on',b.dataset.f===dishFit(d)));
   const r=typeof d.rating==='number'?d.rating:7;
   document.getElementById('qeRate').value=r;document.getElementById('qeRateVal').textContent=r.toFixed(1)+' / 10';
   document.getElementById('qePop').classList.add('show');
@@ -1157,6 +1187,7 @@ function updateCardMeta(i){
     const tag=card.querySelector('.rv-tag');if(tag)tag.innerHTML=`${ci.em} ${ci.t} ✎`;
     const sc=card.querySelector('.rv-score');if(sc)sc.innerHTML=`${typeof d.rating==='number'?d.rating.toFixed(1):'—'}/10 ✎`;
     const lbl=card.querySelector('.reel-count');if(lbl)lbl.textContent=`${ci.em} ${ci.t}`;
+    const mm=card.querySelector('img,video');if(mm)mm.style.objectFit=dishFit(d);
     if(!dishHasMedia(d)){const em=card.querySelector('.bigemoji');if(em)em.textContent=ci.em;}
   }
   updateActiveChip();
@@ -1240,7 +1271,7 @@ async function exportData(){
   for(const r of recs){
     const dishes=[];
     for(const d of r.dishes){
-      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,ts:d.ts,mtype:d.mtype};
+      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:d.ts,mtype:d.mtype};
       const mb=dishBlob(d);if(mb)o.media=await blobToDataURL(mb);
       dishes.push(o);
     }
@@ -1261,7 +1292,7 @@ async function importData(file){
     for(const pl of data.places){
       const dishes=[];
       for(const d of pl.dishes){
-        const dish={name:d.name,desc:d.desc,course:d.course,rating:d.rating,ts:d.ts,mtype:d.mtype};
+        const dish={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:d.ts,mtype:d.mtype};
         if(d.media){try{dish.buf=await (await fetch(d.media)).arrayBuffer();}catch(e){}}
         dishes.push(dish);
       }
@@ -1335,10 +1366,17 @@ function wire(){
     document.querySelectorAll('#qePop .qe-c').forEach(x=>x.classList.toggle('on',x===b));
     updateCardMeta(qeIndex);
   });
+  document.querySelectorAll('#qePop .qe-f').forEach(b=>b.onclick=()=>{
+    if(qeIndex==null)return;const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[qeIndex];if(!d)return;
+    d.fit=b.dataset.f;saveRest();
+    document.querySelectorAll('#qePop .qe-f').forEach(x=>x.classList.toggle('on',x===b));
+    updateCardMeta(qeIndex);
+  });
   const qr=document.getElementById('qeRate');
   qr.oninput=()=>{if(qeIndex==null)return;const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[qeIndex];if(!d)return;const val=parseFloat(qr.value);d.rating=val;document.getElementById('qeRateVal').textContent=val.toFixed(1)+' / 10';updateCardMeta(qeIndex);};
   qr.onchange=saveRest;
   document.getElementById('qeDone').onclick=closeQE;
+  document.querySelectorAll('.fitbtn').forEach(b=>b.onclick=()=>{pendingFit=b.dataset.fit;document.querySelectorAll('.fitbtn').forEach(x=>x.classList.toggle('on',x===b));const m=document.querySelector('#drop img,#drop video');if(m)m.style.objectFit=pendingFit;});
   setupZoom();
 }
 
