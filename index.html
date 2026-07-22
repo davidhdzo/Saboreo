@@ -850,9 +850,12 @@ function onMapClick(e){
     return;
   }
   const name=prompt('Nombre del restaurante nuevo:');if(!name)return;
-  const id='custom-'+PLACES.length+'-'+Math.floor(e.latlng.lat*1e5);
+  const id='custom-'+Date.now()+'-'+Math.floor(e.latlng.lat*1e5);
   const p={id,name:name.trim(),cat:'Añadido por ti',addr:'Madrid',lat:e.latlng.lat,lng:e.latlng.lng,custom:true,ckey:null};
-  known.set(id,p);PLACES.push(p);toggleAddMode();refreshVisible();openPanel(id);toast('Restaurante añadido ✓');
+  known.set(id,p);PLACES.push(p);
+  const rec={id,meta:p,dishes:[]};saved.set(id,rec);DB.put(rec);   // se guarda en el dispositivo al instante (aunque no tenga platos)
+  visited.add(id);saveVisited();                                    // al añadirlo tú, cuenta como sitio al que has ido
+  toggleAddMode();refreshVisible();openPanel(id);toast('Restaurante añadido ✓');
 }
 
 /* search suggestions */
