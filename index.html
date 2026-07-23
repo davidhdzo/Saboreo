@@ -1538,6 +1538,11 @@ const SYNC={
   saveUploaded(s){localStorage.setItem(this.k('up'),JSON.stringify([...s]));},
   coerceId(s){return /^\d+$/.test(s)?+s:s;},
   setState(t){this._state=t;const el=document.getElementById('authState');if(el&&this.user)el.textContent=t;},
+  // cola de cambios pendientes de subir (sobrevive a cierres/desconexiones)
+  dirtySet(){try{return new Set(JSON.parse(localStorage.getItem(this.k('dirty'))||'[]'));}catch(e){return new Set();}},
+  saveDirtySet(s){localStorage.setItem(this.k('dirty'),JSON.stringify([...s]));},
+  markPlaceDirty(id){const s=this.dirtySet();s.add(String(id));this.saveDirtySet(s);},
+  clearPlaceDirty(id){const s=this.dirtySet();if(s.delete(String(id)))this.saveDirtySet(s);},
 
   async init(){
     if(typeof supabase==='undefined'){console.warn('[sync] librería no cargada');return;}
@@ -1551,15 +1556,22 @@ const SYNC={
   },
 
   /* ---- envío a la nube ---- */
-  schedulePrefs(){if(this._silent||!this.user)return;clearTimeout(this._ppt);this._ppt=setTimeout(()=>this.pushPrefs().catch(()=>{}),900);},
-  schedulePlace(id){if(this._silent||!this.user)return;this._dirty.add(id);clearTimeout(this._pt);this._pt=setTimeout(()=>this.flushPlaces(),1200);},
-  async flushPlaces(){const ids=[...this._dirty];this._dirty.clear();for(const id of ids){try{await this.pushPlace(id);}catch(e){}}},
+  schedulePrefs(){if(this._silent||!this.user)return;localStorage.setItem(this.k('pdirty'),'1');clearTimeout(this._ppt);this._ppt=setTimeout(()=>this.flushDirty(),900);},
+  schedulePlace(id){if(this._silent||!this.user)return;this.markPlaceDirty(id);clearTimeout(this._pt);this._pt=setTimeout(()=>this.flushDirty(),1200);},
+  // sube TODO lo pendiente (prefs + restaurantes marcados); lo que falle se queda en la cola y se reintenta luego
+  async flushDirty(){
+    if(!this.user||this._flushing)return;this._flushing=true;
+    try{
+      if(localStorage.getItem(this.k('pdirty'))){try{await this.pushPrefs();}catch(e){}}
+      for(const s of [...this.dirtySet()]){try{await this.pushPlace(this.coerceId(s));}catch(e){}}
+    }finally{this._flushing=false;}
+  },
 
   async pushPrefs(){
     if(!this.user)return;const now=new Date().toISOString();
     const {error}=await this.client.from('prefs').upsert({user_id:this.user.id,favorites:[...favorites],visited:[...visited],ckeys:ckeyOverrides,updated_at:now},{onConflict:'user_id'});
     if(error)throw new Error('prefs push: '+error.message);
-    localStorage.setItem(this.k('prefs_mts'),now);
+    localStorage.setItem(this.k('prefs_mts'),now);localStorage.removeItem(this.k('pdirty'));
   },
   async pushPlace(id,tasks){   // si se pasa "tasks", las subidas de fotos se encolan ahí (para subirlas en paralelo) en vez de una a una
     if(!this.user)return;const rec=saved.get(id);if(!rec)return;
@@ -1582,7 +1594,7 @@ const SYNC={
     const now=new Date().toISOString();
     const {error}=await this.client.from('places').upsert({user_id:this.user.id,place_id:String(id),dishes:{meta:rec.meta||known.get(id)||null,dishes},updated_at:now},{onConflict:'user_id,place_id'});
     if(error)throw new Error('place push: '+error.message);
-    const m=this.placeMts();m[id]=now;this.savePlaceMts(m);
+    const m=this.placeMts();m[id]=now;this.savePlaceMts(m);this.clearPlaceDirty(id);
   },
   async uploadOne(t,up){
     try{const {error}=await this.client.storage.from('media').upload(t.path,t.blob,{upsert:true,contentType:t.mtype||'application/octet-stream'});
@@ -1593,7 +1605,7 @@ const SYNC={
     await this.pushPrefs();
     const ids=[...saved.keys()],tasks=[];
     // 1) subir los datos (rápido) y reunir la lista de fotos/vídeos a subir
-    let i=0;for(const id of ids){i++;this.setState('Preparando… '+i+'/'+ids.length);try{await this.pushPlace(id,tasks);}catch(e){}}
+    let i=0;for(const id of ids){i++;this.setState('Preparando… '+i+'/'+ids.length);try{await this.pushPlace(id,tasks);}catch(e){this.markPlaceDirty(id);}}
     // 2) subir las fotos/vídeos en paralelo (varias a la vez)
     const up=this.uploaded();const total=tasks.length;let done=0;
     const worker=async()=>{while(tasks.length){const t=tasks.pop();await this.uploadOne(t,up);done++;this.setState('Subiendo fotos… '+done+'/'+total);if(done%5===0)this.saveUploaded(up);}};
@@ -1616,7 +1628,12 @@ const SYNC={
       applyCkeyOverrides();refreshVisible();if(current)updateFavStar(current);
       let extra='';if(this._skip)extra=' · '+this._skip+' vídeo(s) >50MB no caben en el plan gratis';else if(this._mediaErr)extra=' · aviso fotos: '+this._mediaErr;
       this.setState('Al día ✓'+extra);if(!silent)toast('Sincronizado ✓'+extra);
-    }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);this.setState('Error: '+msg);if(!silent)toast('Sync: '+msg);}
+      this.flushDirty();   // sube lo que quedara pendiente
+    }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);
+      const net=/fetch|network|timeout|load failed|ECONN|Failed to send|NetworkError/i.test(msg)||!navigator.onLine;
+      if(net){this.setState('Sin conexión · se reintentará solo');if(!silent)toast('Sin conexión · se reintentará solo');clearTimeout(this._retry);this._retry=setTimeout(()=>{if(this.user&&navigator.onLine)this.pullAll(true);},12000);}
+      else{this.setState('Error: '+msg);if(!silent)toast('Sync: '+msg);}
+    }
   },
   mergePrefs(pref,first){
     const localMts=localStorage.getItem(this.k('prefs_mts'));
@@ -1667,8 +1684,11 @@ const SYNC={
 
   startPolling(){
     clearInterval(this._poll);
-    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user)this.pullAll(true);},45000);
-    if(!this._visWired){this._visWired=true;document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user)this.pullAll(true);});}
+    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}},45000);
+    if(!this._visWired){this._visWired=true;
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}});
+      window.addEventListener('online',()=>{if(this.user){this.flushDirty();this.pullAll(true);}});
+    }
   },
 
   /* ---- interfaz de cuenta ---- */
@@ -1708,7 +1728,7 @@ const SYNC={
   },
   async signOut(){
     try{await this.client.auth.signOut();}catch(e){}
-    ['pmts','up','prefs_mts','synced'].forEach(n=>localStorage.removeItem(this.k(n)));
+    ['pmts','up','prefs_mts','synced','dirty','pdirty'].forEach(n=>localStorage.removeItem(this.k(n)));
     this.user=null;clearInterval(this._poll);this.updateAuthUI();this.msg('Sesión cerrada');toast('Sesión cerrada');
   }
 };
