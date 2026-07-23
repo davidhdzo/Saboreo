@@ -600,11 +600,13 @@ function cuisineEmoji(key){const c=CUISINES.find(c=>c.key===key);return c?c.em:'
 // bug conocido de Safari/iOS: "connection to Indexed Database server lost" -> la conexión se pierde y solo se recupera recargando
 function idbLost(e){return /indexed database server lost|database server lost|lost.*refresh|backing store|connection to indexed/i.test(String(e&&e.message||e));}
 function recoverIDB(){
-  const now=Date.now(),last=+(sessionStorage.getItem('idb_reload')||0);
-  if(now-last<20000)return;                                   // evita recargas en bucle
-  sessionStorage.setItem('idb_reload',String(now));
+  if(sessionStorage.getItem('idb_reloaded')){                // ya recargamos una vez y sigue fallando -> NO entrar en bucle
+    try{toast('iOS ha perdido la base de datos. Cierra la app del todo (deslízala fuera del multitarea) y ábrela otra vez.');}catch(_){}
+    return;
+  }
+  sessionStorage.setItem('idb_reloaded','1');
   try{toast('Reconectando la base de datos…');}catch(_){}
-  setTimeout(()=>location.reload(),900);
+  setTimeout(()=>location.reload(),1200);
 }
 const DB={db:null,_opening:null,
   open(){return this._opening||(this._opening=new Promise((res,rej)=>{const r=indexedDB.open('saboreo',1);
@@ -622,11 +624,13 @@ const DB={db:null,_opening:null,
     for(let i=0;i<3;i++){
       try{
         const db=await this.ready();
-        return await new Promise((res,rej)=>{
+        const out=await new Promise((res,rej)=>{
           let t;try{t=db.transaction('places',mode);}catch(err){rej(err);return;}
           work(t.objectStore('places'),t,res,rej);
           t.onabort=()=>rej(t.error||new Error('tx abort'));
         });
+        sessionStorage.removeItem('idb_reloaded');            // fue bien: reiniciamos el freno de recargas
+        return out;
       }catch(e){lastErr=e;this.db=null;this._opening=null;
         if(idbLost(e)){recoverIDB();throw e;}                 // conexión con IndexedDB perdida (bug de iOS): solo se arregla recargando
         if(i<2)await new Promise(r=>setTimeout(r,250));}
@@ -1541,9 +1545,12 @@ function wire(){
 
 async function boot(){
   initMap();wire();buildCuisineChips();buildPlaces();
-  await DB.open();
-  const stored=await DB.all();
-  stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
+  // si la base de datos local falla (bug de iOS), arrancamos igualmente: la nube repondrá tus datos
+  try{
+    await DB.open();
+    const stored=await DB.all();
+    stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
+  }catch(e){console.warn('[boot] base de datos local no disponible ahora',e);}
   applyCkeyOverrides();
   refreshVisible();
   const l=document.getElementById('loader');
@@ -1562,7 +1569,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v11 · 23-jul (IDB iOS: recarga auto)',
+  BUILD:'v12 · 23-jul (IDB iOS: sin bucle)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
