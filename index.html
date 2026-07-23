@@ -256,6 +256,12 @@
   .listitem .thumb.bigscore{background:var(--green);color:#fff;font-weight:800;font-size:17px}
   .stat{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border:1px solid var(--line);border-radius:13px;margin-bottom:10px;font-size:14px}
   .stat b{font-size:20px;font-weight:800;color:var(--orange-d)}
+  .authinp{width:100%;background:#fff;border:1px solid var(--line);border-radius:11px;color:var(--txt);padding:12px 13px;font-size:15px;font-family:inherit;outline:none;margin-bottom:10px;transition:.2s}
+  .authinp:focus{border-color:var(--orange)}
+  .save.sec{background:#fff;color:var(--txt);border:1px solid var(--line)}
+  .authmsg{font-size:12.5px;color:var(--txt-dim);margin-top:12px;text-align:center;min-height:16px}
+  .authmsg.err{color:var(--danger)}
+  .authmsg.ok{color:var(--green-d)}
 
   /* restaurant panel tabs */
   .tabs{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);flex-shrink:0}
@@ -386,6 +392,7 @@
   <button data-act="favs"><span>⭐</span> Quiero ir</button>
   <button data-act="dishes"><span>📸</span> Mis platos</button>
   <div class="mp-sep"></div>
+  <button data-act="account"><span>☁️</span> Cuenta y sincronía</button>
   <button data-act="settings"><span>⚙️</span> Ajustes</button>
 </div>
 
@@ -488,6 +495,29 @@
   </div>
 </div>
 
+<!-- login / sincronización en la nube -->
+<div class="overlay" id="authOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h3 id="authTitle">☁️ Cuenta y sincronía</h3><button class="close" id="authClose">✕</button></div>
+    <div class="sheet-body">
+      <div id="authForm">
+        <div class="empty" style="margin:2px 0 14px">Entra con tu email y tus sitios, notas, favoritos y fotos se sincronizarán entre el móvil y el ordenador. ¿Primera vez? Pulsa <b>Crear cuenta</b>.</div>
+        <input class="authinp" id="authEmail" type="email" autocomplete="email" placeholder="tu@email.com"/>
+        <input class="authinp" id="authPass" type="password" autocomplete="current-password" placeholder="Contraseña"/>
+        <button class="save" id="authSignIn">Entrar</button>
+        <button class="save sec" id="authSignUp" style="margin-top:10px">Crear cuenta</button>
+        <div class="authmsg" id="authMsg"></div>
+      </div>
+      <div id="authInfo" style="display:none">
+        <div class="stat"><span>Sesión iniciada</span><b id="authEmailShown">—</b></div>
+        <div class="stat"><span>Estado</span><b id="authState">—</b></div>
+        <button class="save" id="authSyncNow">🔄 Sincronizar ahora</button>
+        <button class="save sec" id="authSignOut" style="margin-top:10px">Cerrar sesión</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- visor de platos a pantalla completa -->
 <div class="viewer" id="viewer">
   <button class="viewer-close" id="viewerClose">✕</button>
@@ -517,6 +547,7 @@
 
 <script src="./leaflet/leaflet.js"></script>
 <script src="data.js" charset="UTF-8"></script>
+<script src="./supabase.js"></script>
 <script>
 /* ============================================================
    Saboreo · Madrid — prototipo funcional
@@ -837,6 +868,7 @@ function renderScores(id){
 }
 // las fotos/vídeos se guardan como ArrayBuffer (fiable al releer, sobre todo en iOS);
 // se reconstruye un Blob "fresco" cada vez que se van a mostrar
+function _mid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}   // id estable para cada foto/vídeo en la nube
 function dishHasMedia(d){return !!(d&&(d.buf||d.blob));}
 function dishBlob(d){if(!d)return null;if(d.buf)return new Blob([d.buf],{type:d.mtype||''});if(d.blob)return d.blob;return null;}
 function dishFit(d){return d&&d.fit==='contain'?'contain':'cover';}   // encuadre de la foto: rellenar (cover) o completa (contain)
@@ -943,11 +975,11 @@ async function saveDish(){
   if(wasEdit){
     const d=rec.dishes[editIndex];
     d.name=name;d.desc=desc;d.course=pendingCourse;d.rating=rating;d.fit=pendingFit;
-    if(pendingMedia){d.buf=pendingMedia.buf;d.mtype=pendingMedia.type;delete d.blob;}   // foto/vídeo cambiado
+    if(pendingMedia){d.buf=pendingMedia.buf;d.mtype=pendingMedia.type;delete d.blob;d.mid=_mid();}   // foto/vídeo cambiado
     else if(editMedia){/* se conserva el que ya tenía (d.buf o d.blob) */}
-    else{delete d.buf;delete d.blob;delete d.mtype;}                                    // se quitó la foto
+    else{delete d.buf;delete d.blob;delete d.mtype;delete d.mid;}                                    // se quitó la foto
   }else{
-    const dish={name,desc,course:pendingCourse,rating,fit:pendingFit,ts:Date.now()};if(pendingMedia){dish.buf=pendingMedia.buf;dish.mtype=pendingMedia.type;}
+    const dish={name,desc,course:pendingCourse,rating,fit:pendingFit,ts:Date.now()};if(pendingMedia){dish.buf=pendingMedia.buf;dish.mtype=pendingMedia.type;dish.mid=_mid();}
     rec.dishes.push(dish);
   }
   await DB.put(rec);saved.set(current,rec);
@@ -1218,6 +1250,7 @@ function menuAction(a){
   if(a==='places')openPlacesSheet();
   else if(a==='favs')setMapMode('wishlist');
   else if(a==='dishes')openDishesSheet();
+  else if(a==='account')SYNC.openAuth();
   else if(a==='settings')openSettings();
 }
 
@@ -1255,7 +1288,7 @@ function openSettings(){
     `<div class="stat"><span>Platos guardados</span><b>${platos}</b></div>`+
     `<div class="stat"><span>Favoritos</span><b>${favorites.size}</b></div>`+
     `<div class="stat"><span>Tu nota media global</span><b>${media}</b></div>`+
-    `<div class="empty" style="margin:6px 0 4px">Tus fotos y notas se guardan solo en este dispositivo. Haz una copia de vez en cuando.</div>`+
+    `<div class="empty" style="margin:6px 0 4px">Inicia sesión en <b>☁️ Cuenta y sincronía</b> para que tus sitios, notas y fotos se sincronicen entre el móvil y el ordenador. La copia de seguridad sigue disponible aquí abajo.</div>`+
     `<button class="save" id="btnExport">⬇️ Exportar copia de seguridad</button>`+
     `<button class="save" id="btnImport" style="margin-top:10px;background:#fff;color:var(--txt);border:1px solid var(--line)">⬆️ Importar copia</button>`;
   document.getElementById('btnExport').onclick=exportData;
@@ -1390,7 +1423,194 @@ async function boot(){
   const l=document.getElementById('loader');
   document.getElementById('loaderTxt').textContent=`${PLACES.length.toLocaleString('es')} restaurantes listos`;
   setTimeout(()=>l.classList.add('hide'),700);
+  SYNC.init();
 }
+
+/* ============================================================
+   Sincronización en la nube (Supabase) · login + sync bidireccional
+   - prefs (favoritos, "he ido", tipos de cocina) -> tabla prefs (1 fila)
+   - cada restaurante con sus platos -> tabla places (las fotos/vídeos van al Storage)
+   - subida: al guardar algo en local se sube (con pequeño retardo para agrupar)
+   - bajada: al entrar, al volver a la pestaña y cada 45s
+   ============================================================ */
+const SYNC={
+  URL:'https://vioriwpflofxgscjgkqc.supabase.co',
+  KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
+  client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
+
+  k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
+  placeMts(){try{return JSON.parse(localStorage.getItem(this.k('pmts'))||'{}');}catch(e){return {};}},
+  savePlaceMts(m){localStorage.setItem(this.k('pmts'),JSON.stringify(m));},
+  uploaded(){try{return new Set(JSON.parse(localStorage.getItem(this.k('up'))||'[]'));}catch(e){return new Set();}},
+  saveUploaded(s){localStorage.setItem(this.k('up'),JSON.stringify([...s]));},
+  coerceId(s){return /^\d+$/.test(s)?+s:s;},
+  setState(t){this._state=t;const el=document.getElementById('authState');if(el&&this.user)el.textContent=t;},
+
+  async init(){
+    if(typeof supabase==='undefined'){console.warn('[sync] librería no cargada');return;}
+    try{this.client=supabase.createClient(this.URL,this.KEY);}catch(e){console.warn('[sync]',e);return;}
+    this.wire();
+    let session=null;
+    try{session=(await this.client.auth.getSession()).data.session;}catch(e){}
+    if(session&&session.user){this.user=session.user;this.updateAuthUI();this.startPolling();this.pullAll(true);}
+    else{this.updateAuthUI();if(!localStorage.getItem('sb_prompted')){localStorage.setItem('sb_prompted','1');setTimeout(()=>this.openAuth(),1000);}}
+    this.client.auth.onAuthStateChange((ev,sess)=>{this.user=sess&&sess.user?sess.user:null;this.updateAuthUI();});
+  },
+
+  /* ---- envío a la nube ---- */
+  schedulePrefs(){if(this._silent||!this.user)return;clearTimeout(this._ppt);this._ppt=setTimeout(()=>this.pushPrefs().catch(()=>{}),900);},
+  schedulePlace(id){if(this._silent||!this.user)return;this._dirty.add(id);clearTimeout(this._pt);this._pt=setTimeout(()=>this.flushPlaces(),1200);},
+  async flushPlaces(){const ids=[...this._dirty];this._dirty.clear();for(const id of ids){try{await this.pushPlace(id);}catch(e){}}},
+
+  async pushPrefs(){
+    if(!this.user)return;const now=new Date().toISOString();
+    const {error}=await this.client.from('prefs').upsert({user_id:this.user.id,favorites:[...favorites],visited:[...visited],ckeys:ckeyOverrides,updated_at:now},{onConflict:'user_id'});
+    if(!error)localStorage.setItem(this.k('prefs_mts'),now);
+  },
+  async pushPlace(id){
+    if(!this.user)return;const rec=saved.get(id);if(!rec)return;
+    const up=this.uploaded(),dishes=[];
+    for(const d of rec.dishes){
+      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:d.ts};
+      if(dishHasMedia(d)){
+        if(!d.mid)d.mid=_mid();
+        o.mid=d.mid;o.mtype=d.mtype||'';
+        if(!up.has(d.mid)){
+          try{const {error}=await this.client.storage.from('media').upload(this.user.id+'/'+id+'/'+d.mid,dishBlob(d),{upsert:true,contentType:d.mtype||'application/octet-stream'});
+            if(!error)up.add(d.mid);}catch(e){}
+        }
+      }
+      dishes.push(o);
+    }
+    this.saveUploaded(up);
+    const now=new Date().toISOString();
+    const {error}=await this.client.from('places').upsert({user_id:this.user.id,place_id:String(id),dishes:{meta:rec.meta||known.get(id)||null,dishes},updated_at:now},{onConflict:'user_id,place_id'});
+    if(!error){const m=this.placeMts();m[id]=now;this.savePlaceMts(m);}
+  },
+  async pushAllLocal(){
+    const ids=[...saved.keys()];let i=0;
+    await this.pushPrefs();
+    for(const id of ids){i++;this.setState('Subiendo… '+i+'/'+ids.length);try{await this.pushPlace(id);}catch(e){}}
+  },
+
+  /* ---- bajada desde la nube ---- */
+  async pullAll(silent){
+    if(!this.user)return;this.setState('Sincronizando…');
+    try{
+      const first=!localStorage.getItem(this.k('synced'));
+      const pr=await this.client.from('prefs').select('*').eq('user_id',this.user.id).maybeSingle();
+      if(pr.data)this.mergePrefs(pr.data,first);
+      const rs=await this.client.from('places').select('place_id,dishes,updated_at').eq('user_id',this.user.id);
+      if(rs.data)for(const row of rs.data)await this.mergePlace(row,first);
+      if(first){await this.pushAllLocal();localStorage.setItem(this.k('synced'),'1');}
+      applyCkeyOverrides();refreshVisible();if(current)updateFavStar(current);
+      this.setState('Al día ✓');if(!silent)toast('Sincronizado ✓');
+    }catch(e){console.warn('[sync]',e);this.setState('Error de sincronización');if(!silent)toast('No se pudo sincronizar');}
+  },
+  mergePrefs(pref,first){
+    const localMts=localStorage.getItem(this.k('prefs_mts'));
+    const cloudNewer=!localMts||(pref.updated_at>localMts);
+    this._silent=true;
+    if(first){
+      (pref.favorites||[]).forEach(x=>favorites.add(x));
+      (pref.visited||[]).forEach(x=>visited.add(x));
+      Object.keys(pref.ckeys||{}).forEach(k=>{if(!(k in ckeyOverrides))ckeyOverrides[k]=pref.ckeys[k];});
+      saveFavs();saveVisited();saveCkeyOverrides();
+    }else if(cloudNewer){
+      favorites.clear();(pref.favorites||[]).forEach(x=>favorites.add(x));
+      visited.clear();(pref.visited||[]).forEach(x=>visited.add(x));
+      Object.keys(ckeyOverrides).forEach(k=>delete ckeyOverrides[k]);Object.assign(ckeyOverrides,pref.ckeys||{});
+      saveFavs();saveVisited();saveCkeyOverrides();
+      localStorage.setItem(this.k('prefs_mts'),pref.updated_at);
+    }
+    this._silent=false;
+  },
+  async mergePlace(row,first){
+    const id=this.coerceId(row.place_id);
+    const payload=row.dishes||{};
+    const cloudDishes=Array.isArray(payload)?payload:(payload.dishes||[]);
+    const meta=Array.isArray(payload)?null:payload.meta;
+    const m=this.placeMts(),localMts=m[id],localRec=saved.get(id);
+    const cloudNewer=!localMts||(row.updated_at>localMts);
+    if(localRec&&!first&&!cloudNewer)return;
+    const up=this.uploaded(),dishes=[];
+    for(const cd of cloudDishes){
+      const d={name:cd.name,desc:cd.desc,course:cd.course,rating:cd.rating,fit:cd.fit,ts:cd.ts};
+      if(cd.mid){
+        d.mid=cd.mid;d.mtype=cd.mtype||'';
+        const ex=localRec&&localRec.dishes.find(x=>x.mid===cd.mid&&dishHasMedia(x));
+        if(ex){d.buf=ex.buf;d.blob=ex.blob;}
+        else{try{const dl=await this.client.storage.from('media').download(this.user.id+'/'+id+'/'+cd.mid);
+          if(dl.data){d.buf=await dl.data.arrayBuffer();if(!d.mtype)d.mtype=dl.data.type;}}catch(e){}}
+        up.add(cd.mid);
+      }
+      dishes.push(d);
+    }
+    this.saveUploaded(up);
+    const rec={id,meta:meta||(localRec&&localRec.meta)||known.get(id)||null,dishes};
+    this._silent=true;await DB.put(rec);this._silent=false;
+    saved.set(id,rec);
+    if(rec.meta&&!known.has(id)){const p={...rec.meta,ckey:rec.meta.ckey||cuisineKey(rec.meta.cat)};known.set(id,p);PLACES.push(p);}
+    m[id]=row.updated_at;this.savePlaceMts(m);
+  },
+
+  startPolling(){
+    clearInterval(this._poll);
+    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user)this.pullAll(true);},45000);
+    if(!this._visWired){this._visWired=true;document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user)this.pullAll(true);});}
+  },
+
+  /* ---- interfaz de cuenta ---- */
+  wire(){
+    document.getElementById('authClose').onclick=()=>document.getElementById('authOverlay').classList.remove('show');
+    document.getElementById('authOverlay').onclick=e=>{if(e.target.id==='authOverlay')e.currentTarget.classList.remove('show');};
+    document.getElementById('authSignIn').onclick=()=>this.signIn();
+    document.getElementById('authSignUp').onclick=()=>this.signUp();
+    document.getElementById('authSignOut').onclick=()=>this.signOut();
+    document.getElementById('authSyncNow').onclick=()=>this.pullAll(false);
+    document.getElementById('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')this.signIn();});
+  },
+  openAuth(){this.updateAuthUI();document.getElementById('authOverlay').classList.add('show');},
+  updateAuthUI(){
+    const form=document.getElementById('authForm'),info=document.getElementById('authInfo');if(!form)return;
+    if(this.user){form.style.display='none';info.style.display='';document.getElementById('authEmailShown').textContent=this.user.email||'—';document.getElementById('authState').textContent=this._state||'Conectado';}
+    else{form.style.display='';info.style.display='none';}
+  },
+  msg(t,cls){const el=document.getElementById('authMsg');if(el){el.textContent=t||'';el.className='authmsg'+(cls?' '+cls:'');}},
+  async signIn(){
+    const email=document.getElementById('authEmail').value.trim(),password=document.getElementById('authPass').value;
+    if(!email||!password){this.msg('Escribe email y contraseña','err');return;}
+    this.msg('Entrando…');
+    const {data,error}=await this.client.auth.signInWithPassword({email,password});
+    if(error){this.msg(/invalid/i.test(error.message)?'Email o contraseña incorrectos (¿aún no tienes cuenta? pulsa Crear cuenta)':error.message,'err');return;}
+    this.user=data.user;this.msg('¡Dentro! Sincronizando…','ok');this.updateAuthUI();this.startPolling();await this.pullAll(false);this.updateAuthUI();
+  },
+  async signUp(){
+    const email=document.getElementById('authEmail').value.trim(),password=document.getElementById('authPass').value;
+    if(!email||!password){this.msg('Escribe email y contraseña','err');return;}
+    if(password.length<6){this.msg('La contraseña debe tener al menos 6 caracteres','err');return;}
+    this.msg('Creando cuenta…');
+    const {data,error}=await this.client.auth.signUp({email,password});
+    if(error){this.msg(error.message,'err');return;}
+    if(data.session&&data.user){this.user=data.user;this.msg('¡Cuenta creada! Sincronizando…','ok');this.updateAuthUI();this.startPolling();await this.pullAll(false);this.updateAuthUI();}
+    else{this.msg('Cuenta creada. Revisa tu correo para confirmar y luego pulsa Entrar.','ok');}
+  },
+  async signOut(){
+    try{await this.client.auth.signOut();}catch(e){}
+    ['pmts','up','prefs_mts','synced'].forEach(n=>localStorage.removeItem(this.k(n)));
+    this.user=null;clearInterval(this._poll);this.updateAuthUI();this.msg('Sesión cerrada');toast('Sesión cerrada');
+  }
+};
+
+/* enganchar los guardados locales para que suban a la nube automáticamente */
+(function(){
+  const _put=DB.put.bind(DB);
+  DB.put=function(o){return _put(o).then(r=>{if(!SYNC._silent&&o&&o.id!=null)SYNC.schedulePlace(o.id);return r;});};
+  const _sf=saveFavs;saveFavs=function(){_sf.apply(this,arguments);SYNC.schedulePrefs();};
+  const _sv=saveVisited;saveVisited=function(){_sv.apply(this,arguments);SYNC.schedulePrefs();};
+  const _sc=saveCkeyOverrides;saveCkeyOverrides=function(){_sc.apply(this,arguments);SYNC.schedulePrefs();};
+})();
+
 boot();
 
 /* PWA: registrar service worker (solo funciona servido por http/https, no con file://) */
