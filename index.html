@@ -627,7 +627,7 @@ function norm(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/
 
 /* map */
 function initMap(){
-  map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:11,maxZoom:21,preferCanvas:true}).setView([40.4155,-3.7025],15);
+  map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:6,maxZoom:21,preferCanvas:true}).setView([40.4155,-3.7025],15);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap · © CARTO',subdomains:'abcd',maxZoom:21,maxNativeZoom:19,keepBuffer:8,updateWhenIdle:true,updateWhenZooming:false}).addTo(map);
   markerLayer=L.layerGroup().addTo(map);
   map.on('click',onMapClick);
