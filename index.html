@@ -275,6 +275,7 @@
 
   /* tiktok-style dish reel */
   .reel{display:flex;height:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;background:#0c0d0b}
+  #viewerReel{flex-direction:column;overflow-x:hidden;overflow-y:auto;scroll-snap-type:y mandatory}   /* "Ver mis platos": feed vertical (arriba/abajo) */
   .reel::-webkit-scrollbar{display:none}
   .reel-card{position:relative;flex:0 0 100%;width:100%;height:100%;scroll-snap-align:center;background:#0c0d0b;display:flex;align-items:center;justify-content:center;overflow:hidden}
   .reel-card img,.reel-card video{width:100%;height:100%;object-fit:cover;display:block}
@@ -1276,7 +1277,7 @@ function updateActiveChip(){
   if(viewerMode!=='rest')return;
   const reel=document.getElementById('viewerReel'),bar=document.getElementById('viewerFilter');
   const cards=reel.querySelectorAll('.reel-card');if(!cards.length)return;
-  const idx=Math.min(cards.length-1,Math.round(reel.scrollLeft/Math.max(1,reel.clientWidth)));
+  const idx=Math.min(cards.length-1,Math.round(reel.scrollTop/Math.max(1,reel.clientHeight)));
   const dc=cards[idx]?cards[idx].dataset.dc:'';
   bar.querySelectorAll('.vf-chip').forEach(x=>x.classList.toggle('on',x.dataset.c===dc));
 }
@@ -1286,7 +1287,7 @@ function renderViewer(start){
   const reel=document.getElementById('viewerReel'),bar=document.getElementById('viewerFilter'),v=document.getElementById('viewer');
   closeQE();
   viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];
-  reel.innerHTML='';reel.style.overflowX='';
+  reel.innerHTML='';reel.style.overflowY='';
   v.classList.toggle('rest',viewerMode==='rest');
   const list=viewerList();
   if(viewerMode==='rest'){
@@ -1297,7 +1298,7 @@ function renderViewer(start){
     bar.querySelectorAll('.vf-chip').forEach(b=>b.onclick=()=>{                   // atajo: salta a la 1ª foto de esa categoría
       const cards=[...reel.querySelectorAll('.reel-card')];
       const idx=cards.findIndex(c=>c.dataset.dc===b.dataset.c);
-      if(idx>=0)reel.scrollTo({left:idx*reel.clientWidth,behavior:'smooth'});
+      if(idx>=0)reel.scrollTo({top:idx*reel.clientHeight,behavior:'smooth'});
     });
   }else{bar.style.display='none';bar.innerHTML='';}
   v.classList.add('show');
@@ -1322,7 +1323,7 @@ function renderViewer(start){
       `<div class="reel-bot"><div class="row1">${score}${tag}</div>${d.desc?`<p class="reel-desc">${esc(d.desc)}</p>`:''}${delBtn}${bottomBtn}</div>`;
     reel.appendChild(card);attachMediaFallback(card,d);
   });
-  reel.scrollLeft=(start||0)*reel.clientWidth;
+  reel.scrollTop=(start||0)*reel.clientHeight;
   if(viewerMode==='rest'){
     reel.querySelectorAll('.rv-del').forEach(b=>b.onclick=()=>viewerDelete(+b.dataset.i));
     reel.querySelectorAll('.rv-tag,.rv-score').forEach(b=>b.onclick=()=>openQE(+b.dataset.i));
@@ -1367,50 +1368,32 @@ function updateCardMeta(i){
   updateActiveChip();
   if(current===viewerRestId)renderScores(current);
 }
-function closeViewer(){closeQE();document.getElementById('viewer').classList.remove('show');const r=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];r.innerHTML='';r.style.overflowX='';}
+function closeViewer(){closeQE();document.getElementById('viewer').classList.remove('show');const r=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];r.innerHTML='';r.style.overflowY='';}
 /* pinch-zoom + doble toque + arrastre sobre la foto del visor */
 function applyT(img){img.style.transform=`translate(${img._x||0}px,${img._y||0}px) scale(${img._scale||1})`;}
 // no dejar que la foto se salga del todo al moverla
 function clampPan(img){const S=img._scale||1,mx=(S-1)*img.clientWidth/2,my=(S-1)*img.clientHeight/2;img._x=Math.max(-mx,Math.min(mx,img._x||0));img._y=Math.max(-my,Math.min(my,img._y||0));}
-function resetImg(img,reel){img._scale=1;img._x=0;img._y=0;img.style.touchAction='';reel.style.overflowX='';applyT(img);}
-// pasar al plato anterior/siguiente (dir -1 / +1)
-function navViewer(dir){const reel=document.getElementById('viewerReel');const cards=reel.querySelectorAll('.reel-card');if(!cards.length)return;const cur=Math.round(reel.scrollLeft/Math.max(1,reel.clientWidth));const nx=Math.max(0,Math.min(cards.length-1,cur+dir));reel.scrollTo({left:nx*reel.clientWidth,behavior:'smooth'});}
+function resetImg(img,reel){img._scale=1;img._x=0;img._y=0;img.style.touchAction='';reel.style.overflowY='';applyT(img);}
 function setupZoom(){
   const reel=document.getElementById('viewerReel');
-  // --- pellizco (2 dedos): amplía hacia el punto donde pellizcas ---
-  let gImg=null,gStart=1,gfx=0,gfy=0;
-  reel.addEventListener('gesturestart',e=>{const img=e.target.closest('img');if(!img)return;e.preventDefault();gImg=img;gStart=img._scale||1;reel.style.overflowX='hidden';img.style.touchAction='none';const r=img.getBoundingClientRect();gfx=e.clientX-(r.left+r.width/2);gfy=e.clientY-(r.top+r.height/2);});
-  reel.addEventListener('gesturechange',e=>{if(!gImg)return;e.preventDefault();const S=Math.max(1,Math.min(5,gStart*e.scale));gImg._scale=S;if(gStart<=1.05){gImg._x=gfx*(1-S);gImg._y=gfy*(1-S);}clampPan(gImg);applyT(gImg);});
-  reel.addEventListener('gestureend',()=>{if(!gImg)return;if((gImg._scale||1)<=1.02)resetImg(gImg,reel);gImg=null;});
+  // --- pellizco (2 dedos): amplía/reduce hacia el punto donde pellizcas (funciona en ambos sentidos) ---
+  let gImg=null,gS0=1,gT0x=0,gT0y=0,gfx=0,gfy=0;
+  reel.addEventListener('gesturestart',e=>{const img=e.target.closest('img');if(!img)return;e.preventDefault();gImg=img;gS0=img._scale||1;gT0x=img._x||0;gT0y=img._y||0;const r=img.getBoundingClientRect();gfx=e.clientX-(r.left+r.width/2);gfy=e.clientY-(r.top+r.height/2);reel.style.overflowY='hidden';img.style.touchAction='none';});
+  reel.addEventListener('gesturechange',e=>{if(!gImg)return;e.preventDefault();const S=Math.max(1,Math.min(5,gS0*e.scale));gImg._scale=S;gImg._x=gT0x+gfx*(1-S/gS0);gImg._y=gT0y+gfy*(1-S/gS0);clampPan(gImg);applyT(gImg);});
+  reel.addEventListener('gestureend',()=>{if(!gImg)return;if((gImg._scale||1)<=1.05)resetImg(gImg,reel);else{clampPan(gImg);applyT(gImg);}gImg=null;});
   // --- arrastrar con 1 dedo cuando hay zoom (moverse por la foto) ---
   let panImg=null,px=0,py=0,ox=0,oy=0;
   reel.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;const img=e.target.closest('img');if(!img||(img._scale||1)<=1)return;panImg=img;px=e.touches[0].clientX;py=e.touches[0].clientY;ox=img._x||0;oy=img._y||0;},{passive:false});
   reel.addEventListener('touchmove',e=>{if(!panImg||e.touches.length!==1)return;e.preventDefault();panImg._x=ox+(e.touches[0].clientX-px);panImg._y=oy+(e.touches[0].clientY-py);clampPan(panImg);applyT(panImg);},{passive:false});
   reel.addEventListener('touchend',()=>{panImg=null;});
-  // --- tap con 1 dedo: doble tap = zoom al punto; tap simple en el lado izq/dcho = plato anterior/siguiente ---
-  let tsx=0,tsy=0,tMoved=false;
-  reel.addEventListener('touchstart',e=>{if(e.touches.length===1){tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;tMoved=false;}},{passive:true});
-  reel.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientX-tsx)>10||Math.abs(e.touches[0].clientY-tsy)>10))tMoved=true;},{passive:true});
-  let lastTap=0,tapTimer=null;
-  reel.addEventListener('touchend',e=>{
-    const t=e.changedTouches&&e.changedTouches[0];if(!t)return;
-    const now=Date.now(),dt=now-lastTap;lastTap=now;
-    if(dt<300){                                                    // DOBLE TAP -> zoom hacia el punto tocado (o volver)
-      if(tapTimer){clearTimeout(tapTimer);tapTimer=null;}
-      const img=e.target.closest('img');if(!img)return;
+  // --- doble tap: zoom hacia el punto tocado (o volver al normal) ---
+  let lastTap=0;
+  reel.addEventListener('touchend',e=>{const img=e.target.closest('img');if(!img)return;const t=e.changedTouches&&e.changedTouches[0];const now=Date.now();
+    if(now-lastTap<300){
       if((img._scale||1)>1){resetImg(img,reel);}
-      else{const r=img.getBoundingClientRect(),S=2.5,dx=t.clientX-(r.left+r.width/2),dy=t.clientY-(r.top+r.height/2);img._scale=S;img._x=dx*(1-S);img._y=dy*(1-S);clampPan(img);reel.style.overflowX='hidden';img.style.touchAction='none';applyT(img);}
-      return;
+      else if(t){const r=img.getBoundingClientRect(),S=2.5,dx=t.clientX-(r.left+r.width/2),dy=t.clientY-(r.top+r.height/2);img._scale=S;img._x=dx*(1-S);img._y=dy*(1-S);clampPan(img);reel.style.overflowY='hidden';img.style.touchAction='none';applyT(img);}
     }
-    if(tMoved)return;                                             // fue un deslizamiento, no un toque
-    if(e.target.closest('button,a,input,.reel-bot,.reel-top,.viewer-filter,.qe'))return;   // no navegar al tocar controles
-    const img=e.target.closest('img,video,.reel-card');
-    if(img&&img.tagName==='IMG'&&(img._scale||1)>1)return;         // si está ampliada, el toque no navega
-    const x=t.clientX,w=reel.clientWidth;
-    if(x<w*0.38||x>w*0.62){                                        // solo las zonas laterales
-      tapTimer=setTimeout(()=>{tapTimer=null;navViewer(x<w*0.38?-1:1);},320);
-    }
-  });
+    lastTap=now;});
 }
 function closeOverlay(){document.getElementById('overlay').classList.remove('show');}
 
@@ -1612,7 +1595,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v15 · 23-jul (tap navega + zoom al punto)',
+  BUILD:'v16 · 23-jul (feed vertical + zoom mejor)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
