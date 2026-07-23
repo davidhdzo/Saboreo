@@ -1477,8 +1477,10 @@ const SYNC={
         if(!d.mid)d.mid=_mid();
         o.mid=d.mid;o.mtype=d.mtype||'';
         if(!up.has(d.mid)){
-          try{const {error}=await this.client.storage.from('media').upload(this.user.id+'/'+id+'/'+d.mid,dishBlob(d),{upsert:true,contentType:d.mtype||'application/octet-stream'});
-            if(!error)up.add(d.mid);else{this._mediaErr=error.message;console.warn('[sync] media',error);}}catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}
+          const blob=dishBlob(d);
+          if(blob&&blob.size>48*1024*1024){this._skip=(this._skip||0)+1;up.add(d.mid);}   // >48MB: no cabe en el plan gratis (límite 50MB/archivo) -> se salta y no se reintenta
+          else{try{const {error}=await this.client.storage.from('media').upload(this.user.id+'/'+id+'/'+d.mid,blob,{upsert:true,contentType:d.mtype||'application/octet-stream'});
+            if(!error)up.add(d.mid);else{this._mediaErr=error.message;console.warn('[sync] media',error);}}catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}}
         }
       }
       dishes.push(o);
@@ -1497,7 +1499,7 @@ const SYNC={
 
   /* ---- bajada desde la nube ---- */
   async pullAll(silent){
-    if(!this.user)return;this.setState('Sincronizando…');
+    if(!this.user)return;this.setState('Sincronizando…');this._skip=0;this._mediaErr=null;
     try{
       const first=!localStorage.getItem(this.k('synced'));
       const pr=await this.client.from('prefs').select('*').eq('user_id',this.user.id).maybeSingle();
@@ -1508,7 +1510,8 @@ const SYNC={
       if(rs.data)for(const row of rs.data)await this.mergePlace(row,first);
       if(first){await this.pushAllLocal();localStorage.setItem(this.k('synced'),'1');}
       applyCkeyOverrides();refreshVisible();if(current)updateFavStar(current);
-      this.setState(this._mediaErr?('Al día · aviso fotos: '+this._mediaErr):'Al día ✓');if(!silent)toast(this._mediaErr?('Datos ✓ · fotos: '+this._mediaErr):'Sincronizado ✓');
+      let extra='';if(this._skip)extra=' · '+this._skip+' vídeo(s) >50MB no caben en el plan gratis';else if(this._mediaErr)extra=' · aviso fotos: '+this._mediaErr;
+      this.setState('Al día ✓'+extra);if(!silent)toast('Sincronizado ✓'+extra);
     }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);this.setState('Error: '+msg);if(!silent)toast('Sync: '+msg);}
   },
   mergePrefs(pref,first){
