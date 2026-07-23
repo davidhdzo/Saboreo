@@ -688,9 +688,21 @@ function refreshVisible(){
       const g=calcScores(p.id).global;
       if(g!=null)scored.push({p,g});
     });
-    scored.sort((a,b)=>b.g-a.g);
+    scored.sort((a,b)=>b.g-a.g);   // mejor nota primero: reclama su hueco antes -> su nombre es el que se ve
     const topSet=new Set(scored.slice(0,10).map(o=>o.p.id));
-    scored.forEach(o=>addMarker(o.p,true,`${topSet.has(o.p.id)?'⭐ ':''}${o.p.name} · ${o.g.toFixed(1)}`));
+    // reparte los nombres evitando que se pisen (igual que en el mapa normal)
+    const placed=[];
+    const fits=(pt,txt)=>{
+      const w=Math.min(240,txt.length*6.6+18);
+      const box={x1:pt.x-w/2-4,y1:pt.y-34,x2:pt.x+w/2+4,y2:pt.y-4};
+      if(placed.some(bx=>!(box.x2<bx.x1||box.x1>bx.x2||box.y2<bx.y1||box.y1>bx.y2)))return false;
+      placed.push(box);return true;
+    };
+    scored.forEach(o=>{
+      const txt=`${topSet.has(o.p.id)?'⭐ ':''}${o.p.name} · ${o.g.toFixed(1)}`;
+      const pt=map.latLngToContainerPoint([o.p.lat,o.p.lng]);
+      addMarker(o.p,fits(pt,txt),txt);   // el pin siempre; el nombre solo si no se solapa
+    });
     return;
   }
   if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
