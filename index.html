@@ -329,6 +329,9 @@
   .qe-f{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:12.5px;font-weight:700;padding:11px 6px;border-radius:12px;cursor:pointer;font-family:inherit;transition:.15s}
   .qe-f.on{background:linear-gradient(135deg,var(--orange),var(--green));border-color:transparent}
   .qe #qeRate{width:100%;accent-color:var(--orange);cursor:pointer}
+  .qe #qeName{width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:14px;font-weight:600;padding:11px 12px;border-radius:12px;font-family:inherit;outline:none;transition:.15s}
+  .qe #qeName:focus{border-color:var(--orange)}
+  .qe #qeName::placeholder{color:rgba(255,255,255,.4)}
   /* toggle de encuadre en el formulario de añadir */
   .fitrow{margin-top:14px}
   .fitrow>label{display:block;font-size:11.5px;color:var(--txt-dim);margin:0 0 8px;font-weight:600}
@@ -524,7 +527,9 @@
   <div class="viewer-filter" id="viewerFilter"></div>
   <div class="reel" id="viewerReel"></div>
   <div class="qe" id="qePop">
-    <div class="qe-title">Tipo de plato</div>
+    <div class="qe-title">Nombre del plato</div>
+    <input type="text" id="qeName" placeholder="Nombre del plato" maxlength="80"/>
+    <div class="qe-title mt">Tipo de plato</div>
     <div class="qe-courses">
       <button class="qe-c" data-c="entrante">🥗 Entrante</button>
       <button class="qe-c" data-c="plato">🍽️ Plato</button>
@@ -1186,7 +1191,7 @@ function renderViewer(start){
   if(viewerMode==='rest'){
     reel.querySelectorAll('.rv-del').forEach(b=>b.onclick=()=>viewerDelete(+b.dataset.i));
     reel.querySelectorAll('.rv-tag,.rv-score').forEach(b=>b.onclick=()=>openQE(+b.dataset.i));
-    reel.querySelectorAll('.rv-name').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;closeViewer();editDish(viewerRestId,i);});
+    reel.querySelectorAll('.rv-name').forEach(b=>b.onclick=()=>openQE(+b.dataset.i));
     updateActiveChip();
   }else{
     reel.querySelectorAll('.reel-goto').forEach(b=>b.onclick=()=>{const it=dishFeed[+b.dataset.idx];closeViewer();closeOverlay();if(it&&it.p){map.setView([it.p.lat,it.p.lng],17);openPanel(it.p.id);}});
@@ -1203,6 +1208,7 @@ function saveRest(){const rec=saved.get(viewerRestId);if(rec)DB.put(rec);}
 function openQE(i){
   const rec=saved.get(viewerRestId);if(!rec)return;const d=rec.dishes[i];if(!d)return;
   qeIndex=i;
+  document.getElementById('qeName').value=d.name||'';
   document.querySelectorAll('#qePop .qe-c').forEach(b=>b.classList.toggle('on',b.dataset.c===courseKey(d.course)));
   document.getElementById('qeFitWrap').style.display=dishHasMedia(d)?'':'none';
   document.querySelectorAll('#qePop .qe-f').forEach(b=>b.classList.toggle('on',b.dataset.f===dishFit(d)));
@@ -1216,6 +1222,7 @@ function updateCardMeta(i){
   const card=document.querySelector('#viewerReel .reel-card[data-di="'+i+'"]');
   if(card){
     card.dataset.dc=courseKey(d.course);
+    const nm=card.querySelector('.rv-name');if(nm)nm.innerHTML=`${esc(d.name)} <span class="rv-pen">✎</span>`;
     const tag=card.querySelector('.rv-tag');if(tag)tag.innerHTML=`${ci.em} ${ci.t} ✎`;
     const sc=card.querySelector('.rv-score');if(sc)sc.innerHTML=`${typeof d.rating==='number'?d.rating.toFixed(1):'—'}/10 ✎`;
     const lbl=card.querySelector('.reel-count');if(lbl)lbl.textContent=`${ci.em} ${ci.t}`;
@@ -1408,6 +1415,10 @@ function wire(){
   const qr=document.getElementById('qeRate');
   qr.oninput=()=>{if(qeIndex==null)return;const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[qeIndex];if(!d)return;const val=parseFloat(qr.value);d.rating=val;document.getElementById('qeRateVal').textContent=val.toFixed(1)+' / 10';updateCardMeta(qeIndex);};
   qr.onchange=saveRest;
+  const qn=document.getElementById('qeName');
+  qn.oninput=()=>{if(qeIndex==null)return;const rec=saved.get(viewerRestId);const d=rec&&rec.dishes[qeIndex];if(!d)return;d.name=qn.value;updateCardMeta(qeIndex);};
+  qn.onchange=saveRest;
+  qn.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();qn.blur();saveRest();}});
   document.getElementById('qeDone').onclick=closeQE;
   document.querySelectorAll('.fitbtn').forEach(b=>b.onclick=()=>{pendingFit=b.dataset.fit;document.querySelectorAll('.fitbtn').forEach(x=>x.classList.toggle('on',x===b));const m=document.querySelector('#drop img,#drop video');if(m)m.style.objectFit=pendingFit;});
   setupZoom();
