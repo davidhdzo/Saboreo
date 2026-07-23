@@ -600,24 +600,27 @@ function cuisineEmoji(key){const c=CUISINES.find(c=>c.key===key);return c?c.em:'
 const DB={db:null,_opening:null,
   open(){return this._opening||(this._opening=new Promise((res,rej)=>{const r=indexedDB.open('saboreo',1);
     r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('places'))d.createObjectStore('places',{keyPath:'id'});};
-    r.onsuccess=e=>{this.db=e.target.result;this._opening=null;
-      this.db.onclose=()=>{this.db=null;};                                   // iOS cierra la conexión al ir a segundo plano
-      this.db.onversionchange=()=>{try{this.db.close();}catch(_){}this.db=null;};
-      res(this.db);};
+    r.onsuccess=e=>{const conn=e.target.result;this.db=conn;this._opening=null;
+      // el aviso de cierre solo debe anular ESTA conexión, no una nueva que se haya abierto después
+      conn.onclose=()=>{if(this.db===conn)this.db=null;};                    // iOS cierra la conexión al ir a segundo plano
+      conn.onversionchange=()=>{try{conn.close();}catch(_){}if(this.db===conn)this.db=null;};
+      res(conn);};
     r.onerror=()=>{this._opening=null;rej(r.error||new Error('IDB open error'));};}));},
   async ready(){return this.db||await this.open();},
-  // ejecuta una transacción; si la conexión está cerrada, reabre y reintenta una vez
+  // ejecuta una transacción; si la conexión está cerrada, reabre y reintenta (con pausas para que iOS se asiente)
   async _tx(mode,work){
-    for(let i=0;i<2;i++){
-      const db=await this.ready();
+    let lastErr;
+    for(let i=0;i<3;i++){
       try{
+        const db=await this.ready();
         return await new Promise((res,rej)=>{
           let t;try{t=db.transaction('places',mode);}catch(err){rej(err);return;}
           work(t.objectStore('places'),t,res,rej);
           t.onabort=()=>rej(t.error||new Error('tx abort'));
         });
-      }catch(e){this.db=null;if(i===1)throw e;}
+      }catch(e){lastErr=e;this.db=null;this._opening=null;if(i<2)await new Promise(r=>setTimeout(r,250));}
     }
+    throw lastErr;
   },
   put(o){return this._tx('readwrite',(store,t,res,rej)=>{store.put(o);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});},
   get(id){return this._tx('readonly',(store,t,res)=>{const q=store.get(id);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});},
@@ -1548,7 +1551,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v9 · 23-jul (IDB reintento)',
+  BUILD:'v10 · 23-jul (IDB robusto)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
