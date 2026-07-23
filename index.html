@@ -519,6 +519,7 @@
         <button class="save" id="authSyncNow">🔄 Sincronizar ahora</button>
         <button class="save sec" id="authSignOut" style="margin-top:10px">Cerrar sesión</button>
       </div>
+      <div class="empty" id="authVer" style="margin-top:14px;padding:8px;font-size:11px">—</div>
     </div>
   </div>
 </div>
@@ -1547,6 +1548,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
+  BUILD:'v9 · 23-jul (IDB reintento)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -1704,7 +1706,7 @@ const SYNC={
     clearInterval(this._poll);
     this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}},45000);
     if(!this._visWired){this._visWired=true;
-      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}});
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user)setTimeout(()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}},1200);});
       window.addEventListener('online',()=>{if(this.user){this.flushDirty();this.pullAll(true);}});
     }
   },
@@ -1718,6 +1720,7 @@ const SYNC={
     document.getElementById('authSignOut').onclick=()=>this.signOut();
     document.getElementById('authSyncNow').onclick=()=>this.pullAll(false);
     document.getElementById('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')this.signIn();});
+    const ver=document.getElementById('authVer');if(ver)ver.textContent='Saboreo · '+this.BUILD;
   },
   openAuth(){this.updateAuthUI();document.getElementById('authOverlay').classList.add('show');},
   updateAuthUI(){
