@@ -200,6 +200,8 @@
   .listitem:hover{border-color:var(--orange);background:var(--surface-2)}
   .listitem .thumb{width:52px;height:52px;border-radius:10px;object-fit:cover;background:var(--surface-2);flex-shrink:0;display:grid;place-items:center;font-size:20px;color:var(--txt-dim)}
   .listitem .t{flex:1;min-width:0}.listitem .t b{display:block;font-size:14px}.listitem .t small{color:var(--txt-dim);font-size:12px}
+  .pastelist{max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px}
+  .pasterow input{width:20px;height:20px;accent-color:var(--orange);flex:none;margin:0;cursor:pointer}
 
   @media(max-width:560px){.brand small{display:none}.dock button{min-width:48px;padding:7px 8px}.dock button span.lb{display:none}.dock button .ic{font-size:21px}}
 
@@ -815,6 +817,8 @@ function renderInfo(id){
     acts=`<button class="bigbtn primary" id="actAdd">➕ Añadir un plato</button>`+
          `<p class="info-hint">Aún no has guardado platos de este sitio.</p>`;
   }
+  if(n>0)acts+=`<button class="bigbtn" id="actCopy">📋 Copiar platos (${n})</button>`;
+  if(copyBuffer&&copyBuffer.dishes.length)acts+=`<button class="bigbtn" id="actPaste">📥 Pegar «${esc(copyBuffer.name)}» (${copyBuffer.dishes.length})…</button>`;
   const ccChips=CUISINES.map(c=>`<button class="ccchip${p.ckey===c.key?' on':''}" data-k="${c.key}" style="--cc:${c.color}"><span>${c.em}</span>${c.label}</button>`).join('')+
     `<button class="ccchip${!p.ckey?' on':''}" data-k=""><span>🍴</span>Otro</button>`;
   document.getElementById('infoWrap').innerHTML=
@@ -833,6 +837,72 @@ function renderInfo(id){
   document.querySelectorAll('#ccPick .ccchip').forEach(b=>b.onclick=()=>setCuisine(id,b.dataset.k||null));
   const av=document.getElementById('actView');if(av)av.onclick=()=>openRestFullscreen(id);
   const aa=document.getElementById('actAdd');if(aa)aa.onclick=()=>{clearForm();showPane('add');};
+  const ac=document.getElementById('actCopy');if(ac)ac.onclick=()=>copyDishes(id);
+  const ap=document.getElementById('actPaste');if(ap)ap.onclick=openPasteSheet;
+}
+
+/* ---- copiar/pegar platos entre restaurantes de la misma cadena ---- */
+let copyBuffer=null;   // {fromId, name, dishes:[...copia con foto/vídeo...]}
+function copyDishes(id){
+  const rec=saved.get(id),p=known.get(id);
+  if(!rec||!rec.dishes.length){toast('Este sitio no tiene platos que copiar');return;}
+  copyBuffer={fromId:id,name:p?p.name:'',dishes:rec.dishes.map(d=>({name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,mtype:d.mtype,buf:d.buf,blob:d.blob}))};
+  toast(copyBuffer.dishes.length+' plato(s) copiados 📋 · pulsa Pegar');
+  if(current===id)renderInfo(id);
+}
+// "nombre de cadena": primera palabra significativa (ignora artículos y palabras genéricas)
+const CHAIN_STOP=new Set(['la','el','los','las','de','del','y','the','casa','bar','cafe','café','restaurante','resto','taberna']);
+function chainKey(name){
+  const w=norm(name).replace(/[^a-z0-9ñ ]/g,' ').split(/\s+/).filter(x=>x&&!CHAIN_STOP.has(x));
+  return w[0]||norm(name).replace(/[^a-z0-9ñ]/g,'');
+}
+// coincide si comparten esa palabra clave (el usuario confirma después con las casillas)
+function nameMatches(srcName,candName){
+  const key=chainKey(srcName);if(!key||key.length<2)return false;
+  const cn=norm(candName).replace(/[^a-z0-9ñ ]/g,' ').replace(/\s+/g,' ').trim();
+  return cn.split(' ').includes(key)||cn.startsWith(key);
+}
+function findChainMatches(srcId){
+  const src=known.get(srcId);if(!src)return [];
+  const out=[];PLACES.forEach(p=>{if(p.id!==srcId&&nameMatches(src.name,p.name))out.push(p);});
+  out.sort((a,b)=>norm(a.name).localeCompare(norm(b.name)));
+  return out;
+}
+function openPasteSheet(){
+  if(!copyBuffer)return;
+  document.getElementById('sheetTitle').textContent='Pegar platos';
+  const body=document.getElementById('sheetBody');
+  const matches=findChainMatches(copyBuffer.fromId);
+  if(!matches.length){
+    body.innerHTML=`<div class="empty">No se han encontrado otros restaurantes con un nombre parecido a «${esc(copyBuffer.name)}».</div>`;
+    document.getElementById('overlay').classList.add('show');return;
+  }
+  const rows=matches.map(p=>{const rec=saved.get(p.id),n=rec?rec.dishes.length:0;
+    return `<label class="listitem pasterow"><input type="checkbox" class="pastechk" data-id="${p.id}" checked><div class="t"><b>${esc(p.name)}</b><small>📍 ${esc(p.addr||'Madrid')}${n?' · ya tiene '+n+' plato'+(n>1?'s':''):''}</small></div></label>`;}).join('');
+  body.innerHTML=`<div class="empty" style="text-align:left;padding:14px;margin-bottom:12px">Copiado de «${esc(copyBuffer.name)}»: <b>${copyBuffer.dishes.length} plato(s)</b>. Marca dónde pegarlos (se <b>añaden</b> a lo que ya tengan):</div>`+
+    `<div class="pastelist">${rows}</div>`+
+    `<button class="save" id="pasteGo">📥 Pegar en los seleccionados</button>`;
+  document.getElementById('pasteGo').onclick=doPaste;
+  document.getElementById('overlay').classList.add('show');
+}
+async function pasteInto(id,dishes){
+  let rec=saved.get(id);if(!rec)rec={id,meta:known.get(id)||null,dishes:[]};
+  let i=0;
+  for(const d of dishes){
+    const nd={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:Date.now()+(i++)};
+    if(d.buf||d.blob){if(d.buf)nd.buf=d.buf;if(d.blob)nd.blob=d.blob;nd.mtype=d.mtype;nd.mid=_mid();}   // copia propia de la foto en cada local
+    rec.dishes.push(nd);
+  }
+  await DB.put(rec);saved.set(id,rec);visited.add(id);
+}
+async function doPaste(){
+  const ids=[...document.querySelectorAll('.pastechk:checked')].map(c=>{const s=c.dataset.id;return /^\d+$/.test(s)?+s:s;});
+  if(!ids.length){toast('No has seleccionado ningún restaurante');return;}
+  const btn=document.getElementById('pasteGo');if(btn){btn.disabled=true;btn.textContent='Pegando…';}
+  for(const id of ids){try{await pasteInto(id,copyBuffer.dishes);}catch(e){}}
+  saveVisited();refreshVisible();
+  if(current&&ids.includes(current)){renderInfo(current);renderDishes(current);}
+  closeOverlay();toast('Pegado en '+ids.length+' sitio(s) ✓');
 }
 /* asignar/quitar el tipo de cocina de un restaurante */
 function setCuisine(id,key){
