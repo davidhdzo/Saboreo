@@ -1370,20 +1370,47 @@ function updateCardMeta(i){
 function closeViewer(){closeQE();document.getElementById('viewer').classList.remove('show');const r=document.getElementById('viewerReel');viewerURLs.forEach(u=>URL.revokeObjectURL(u));viewerURLs=[];r.innerHTML='';r.style.overflowX='';}
 /* pinch-zoom + doble toque + arrastre sobre la foto del visor */
 function applyT(img){img.style.transform=`translate(${img._x||0}px,${img._y||0}px) scale(${img._scale||1})`;}
+// no dejar que la foto se salga del todo al moverla
+function clampPan(img){const S=img._scale||1,mx=(S-1)*img.clientWidth/2,my=(S-1)*img.clientHeight/2;img._x=Math.max(-mx,Math.min(mx,img._x||0));img._y=Math.max(-my,Math.min(my,img._y||0));}
+function resetImg(img,reel){img._scale=1;img._x=0;img._y=0;img.style.touchAction='';reel.style.overflowX='';applyT(img);}
+// pasar al plato anterior/siguiente (dir -1 / +1)
+function navViewer(dir){const reel=document.getElementById('viewerReel');const cards=reel.querySelectorAll('.reel-card');if(!cards.length)return;const cur=Math.round(reel.scrollLeft/Math.max(1,reel.clientWidth));const nx=Math.max(0,Math.min(cards.length-1,cur+dir));reel.scrollTo({left:nx*reel.clientWidth,behavior:'smooth'});}
 function setupZoom(){
   const reel=document.getElementById('viewerReel');
-  let gImg=null,gStart=1;
-  reel.addEventListener('gesturestart',e=>{const img=e.target.closest('img');if(!img)return;e.preventDefault();gImg=img;gStart=img._scale||1;reel.style.overflowX='hidden';img.style.touchAction='none';});
-  reel.addEventListener('gesturechange',e=>{if(!gImg)return;e.preventDefault();gImg._scale=Math.max(1,Math.min(4,gStart*e.scale));applyT(gImg);});
-  reel.addEventListener('gestureend',()=>{if(!gImg)return;if((gImg._scale||1)<=1.02){gImg._scale=1;gImg._x=0;gImg._y=0;applyT(gImg);reel.style.overflowX='';gImg.style.touchAction='';}gImg=null;});
+  // --- pellizco (2 dedos): amplía hacia el punto donde pellizcas ---
+  let gImg=null,gStart=1,gfx=0,gfy=0;
+  reel.addEventListener('gesturestart',e=>{const img=e.target.closest('img');if(!img)return;e.preventDefault();gImg=img;gStart=img._scale||1;reel.style.overflowX='hidden';img.style.touchAction='none';const r=img.getBoundingClientRect();gfx=e.clientX-(r.left+r.width/2);gfy=e.clientY-(r.top+r.height/2);});
+  reel.addEventListener('gesturechange',e=>{if(!gImg)return;e.preventDefault();const S=Math.max(1,Math.min(5,gStart*e.scale));gImg._scale=S;if(gStart<=1.05){gImg._x=gfx*(1-S);gImg._y=gfy*(1-S);}clampPan(gImg);applyT(gImg);});
+  reel.addEventListener('gestureend',()=>{if(!gImg)return;if((gImg._scale||1)<=1.02)resetImg(gImg,reel);gImg=null;});
+  // --- arrastrar con 1 dedo cuando hay zoom (moverse por la foto) ---
   let panImg=null,px=0,py=0,ox=0,oy=0;
   reel.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;const img=e.target.closest('img');if(!img||(img._scale||1)<=1)return;panImg=img;px=e.touches[0].clientX;py=e.touches[0].clientY;ox=img._x||0;oy=img._y||0;},{passive:false});
-  reel.addEventListener('touchmove',e=>{if(!panImg||e.touches.length!==1)return;e.preventDefault();panImg._x=ox+(e.touches[0].clientX-px);panImg._y=oy+(e.touches[0].clientY-py);applyT(panImg);},{passive:false});
+  reel.addEventListener('touchmove',e=>{if(!panImg||e.touches.length!==1)return;e.preventDefault();panImg._x=ox+(e.touches[0].clientX-px);panImg._y=oy+(e.touches[0].clientY-py);clampPan(panImg);applyT(panImg);},{passive:false});
   reel.addEventListener('touchend',()=>{panImg=null;});
-  let lastTap=0;
-  reel.addEventListener('touchend',e=>{const img=e.target.closest('img');if(!img)return;const now=Date.now();
-    if(now-lastTap<300){if((img._scale||1)>1){img._scale=1;img._x=0;img._y=0;reel.style.overflowX='';img.style.touchAction='';}else{img._scale=2.5;reel.style.overflowX='hidden';img.style.touchAction='none';}applyT(img);}
-    lastTap=now;});
+  // --- tap con 1 dedo: doble tap = zoom al punto; tap simple en el lado izq/dcho = plato anterior/siguiente ---
+  let tsx=0,tsy=0,tMoved=false;
+  reel.addEventListener('touchstart',e=>{if(e.touches.length===1){tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;tMoved=false;}},{passive:true});
+  reel.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientX-tsx)>10||Math.abs(e.touches[0].clientY-tsy)>10))tMoved=true;},{passive:true});
+  let lastTap=0,tapTimer=null;
+  reel.addEventListener('touchend',e=>{
+    const t=e.changedTouches&&e.changedTouches[0];if(!t)return;
+    const now=Date.now(),dt=now-lastTap;lastTap=now;
+    if(dt<300){                                                    // DOBLE TAP -> zoom hacia el punto tocado (o volver)
+      if(tapTimer){clearTimeout(tapTimer);tapTimer=null;}
+      const img=e.target.closest('img');if(!img)return;
+      if((img._scale||1)>1){resetImg(img,reel);}
+      else{const r=img.getBoundingClientRect(),S=2.5,dx=t.clientX-(r.left+r.width/2),dy=t.clientY-(r.top+r.height/2);img._scale=S;img._x=dx*(1-S);img._y=dy*(1-S);clampPan(img);reel.style.overflowX='hidden';img.style.touchAction='none';applyT(img);}
+      return;
+    }
+    if(tMoved)return;                                             // fue un deslizamiento, no un toque
+    if(e.target.closest('button,a,input,.reel-bot,.reel-top,.viewer-filter,.qe'))return;   // no navegar al tocar controles
+    const img=e.target.closest('img,video,.reel-card');
+    if(img&&img.tagName==='IMG'&&(img._scale||1)>1)return;         // si está ampliada, el toque no navega
+    const x=t.clientX,w=reel.clientWidth;
+    if(x<w*0.38||x>w*0.62){                                        // solo las zonas laterales
+      tapTimer=setTimeout(()=>{tapTimer=null;navViewer(x<w*0.38?-1:1);},320);
+    }
+  });
 }
 function closeOverlay(){document.getElementById('overlay').classList.remove('show');}
 
@@ -1585,7 +1612,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v14 · 23-jul (pegar se limpia)',
+  BUILD:'v15 · 23-jul (tap navega + zoom al punto)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
