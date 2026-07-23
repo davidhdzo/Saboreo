@@ -3,12 +3,13 @@
    - Archivos propios (data.js, leaflet, iconos): cache al instante + refresco en segundo plano.
    - Baldosas del mapa (cartocdn): cache-first -> una vez vistas, cargan AL INSTANTE y no se
      recargan una y otra vez. Se guardan en una caché aparte para no mezclarlas con la app. */
-const CACHE = 'saboreo-v3';
+const CACHE = 'saboreo-v4';
 const TILES = 'saboreo-tiles-v1';
 const SHELL = [
   './',
   './index.html',
   './data.js',
+  './supabase.js',
   './manifest.json',
   './leaflet/leaflet.css',
   './leaflet/leaflet.js',
