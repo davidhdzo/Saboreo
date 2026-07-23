@@ -583,7 +583,7 @@ const CUISINES=[
   {key:'griega',label:'Griega',em:'🥙',color:'#06b6d4',match:['greek']},
   {key:'india',label:'India',em:'🍛',color:'#f97316',match:['indian']},
   {key:'libanesa',label:'Libanesa',em:'🧆',color:'#14b8a6',match:['lebanese','arab','syrian']},
-  {key:'estadounidense',label:'Estadounidense',em:'🍔',color:'#3b82f6',match:['american','burger','barbecue','steak']},
+  {key:'estadounidense',label:'Burgers',em:'🍔',color:'#3b82f6',match:['burger','hamburg','smash']},
   {key:'china',label:'China',em:'🥡',color:'#8b5cf6',match:['chinese','asian','dumpling','wok']},
 ];
 const CUISINE_COLOR={};CUISINES.forEach(c=>CUISINE_COLOR[c.key]=c.color);
@@ -627,8 +627,8 @@ function norm(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/
 
 /* map */
 function initMap(){
-  map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:11,maxZoom:19,preferCanvas:true}).setView([40.4155,-3.7025],15);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap · © CARTO',subdomains:'abcd',maxZoom:19,keepBuffer:8,updateWhenIdle:true,updateWhenZooming:false}).addTo(map);
+  map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:11,maxZoom:21,preferCanvas:true}).setView([40.4155,-3.7025],15);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap · © CARTO',subdomains:'abcd',maxZoom:21,maxNativeZoom:19,keepBuffer:8,updateWhenIdle:true,updateWhenZooming:false}).addTo(map);
   markerLayer=L.layerGroup().addTo(map);
   map.on('click',onMapClick);
   map.on('moveend zoomend',scheduleRefresh);
