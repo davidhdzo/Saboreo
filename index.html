@@ -854,6 +854,7 @@ function renderInfo(id){
     acts=`<button class="bigbtn primary" id="actAdd">➕ Añadir un plato</button>`+
          `<p class="info-hint">Aún no has guardado platos de este sitio.</p>`;
   }
+  if(p.custom)acts+=`<button class="bigbtn" id="actRename">✏️ Editar nombre del sitio</button>`;
   if(n>0)acts+=`<button class="bigbtn" id="actCopy">📋 Copiar platos (${n})</button>`;
   if(copyBuffer&&copyBuffer.dishes.length)acts+=`<button class="bigbtn" id="actPaste">📥 Pegar «${esc(copyBuffer.name)}» (${copyBuffer.dishes.length})…</button>`;
   const ccChips=CUISINES.map(c=>`<button class="ccchip${p.ckey===c.key?' on':''}" data-k="${c.key}" style="--cc:${c.color}"><span>${c.em}</span>${c.label}</button>`).join('')+
@@ -876,6 +877,20 @@ function renderInfo(id){
   const aa=document.getElementById('actAdd');if(aa)aa.onclick=()=>{clearForm();showPane('add');};
   const ac=document.getElementById('actCopy');if(ac)ac.onclick=()=>copyDishes(id);
   const ap=document.getElementById('actPaste');if(ap)ap.onclick=openPasteSheet;
+  const arn=document.getElementById('actRename');if(arn)arn.onclick=()=>renamePlace(id);
+}
+/* renombrar un restaurante añadido por ti (se guarda en el dispositivo y se sincroniza) */
+function renamePlace(id){
+  const p=known.get(id);if(!p)return;
+  const nn=prompt('Nombre del restaurante:',p.name);if(nn==null)return;
+  const name=nn.trim();if(!name){toast('El nombre no puede estar vacío');return;}
+  p.name=name;
+  let rec=saved.get(id);if(!rec){rec={id,meta:p,dishes:[]};saved.set(id,rec);}
+  if(rec.meta)rec.meta.name=name;else rec.meta={...p};
+  DB.put(rec);                                   // persiste en el dispositivo + sube a la nube
+  document.getElementById('pName').textContent=name;
+  renderInfo(id);refreshVisible();
+  toast('Nombre actualizado ✓');
 }
 
 /* ---- copiar/pegar platos entre restaurantes de la misma cadena ---- */
@@ -1569,7 +1584,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v12 · 23-jul (IDB iOS: sin bucle)',
+  BUILD:'v13 · 23-jul (editar nombre sitio)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
