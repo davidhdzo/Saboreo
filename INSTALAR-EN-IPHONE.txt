@@ -1,0 +1,78 @@
+SABOREO · Instalar como app en el iPhone (PWA con GitHub Pages)
+================================================================
+
+Ya está todo preparado como PWA. Solo tienes que subir la carpeta a
+GitHub Pages (gratis, HTTPS) y añadirla a la pantalla de inicio.
+
+ARCHIVOS QUE HAY QUE SUBIR
+--------------------------
+- index.html
+- data.js
+- manifest.json
+- sw.js
+- icon-180.png
+- icon-512.png
+- leaflet/  (la carpeta entera, con leaflet.js y leaflet.css dentro)
+- LEEME.txt  (opcional)
+
+NO hace falta subir "index_backup.html" (es tu copia de seguridad local).
+
+
+PASO 1 · Crear el repositorio
+-----------------------------
+1. Entra en https://github.com  (con tu cuenta).
+2. Arriba a la derecha: "+"  ->  "New repository".
+3. Nombre del repo:  saboreo
+4. Marca "Public"  (IMPORTANTE: GitHub Pages gratis necesita repo público).
+5. Botón "Create repository".
+
+
+PASO 2 · Subir los archivos
+---------------------------
+1. En el repo nuevo, pulsa "uploading an existing file"
+   (o pestaña "Add file" -> "Upload files").
+2. Arrastra TODOS los archivos de la lista de arriba, INCLUIDA la carpeta
+   "leaflet" (arrástrala tal cual; GitHub mantiene la carpeta).
+3. Espera a que suban (data.js es el más grande, ~1 MB).
+4. Abajo, pulsa "Commit changes".
+
+
+PASO 3 · Activar GitHub Pages
+-----------------------------
+1. En el repo: pestaña "Settings".
+2. Menú izquierdo: "Pages".
+3. En "Branch" elige  "main"  y carpeta  "/ (root)"  ->  "Save".
+4. Espera 1-2 minutos y recarga. Aparecerá la dirección:
+   https://TU-USUARIO.github.io/saboreo/
+
+
+PASO 4 · Instalar en el iPhone
+------------------------------
+1. Abre esa dirección en SAFARI (tiene que ser Safari, no Chrome).
+2. Pulsa el botón Compartir (el cuadrado con la flecha hacia arriba).
+3. Baja y elige "Añadir a pantalla de inicio".
+4. Confirma. Ya tienes el icono de Saboreo; se abre a pantalla completa.
+
+
+IMPORTANTE · Copia de seguridad de tus datos
+--------------------------------------------
+Tus fotos y notas se guardan SOLO en el iPhone. Para no perderlas:
+- Menú ☰  ->  Ajustes  ->  "Exportar copia de seguridad".
+  Se descarga un archivo saboreo-backup-FECHA.json (guárdalo donde quieras).
+- Para restaurar: ☰ -> Ajustes -> "Importar copia" y eliges ese archivo.
+Hazlo de vez en cuando, sobre todo antes de borrar la app o cambiar de móvil.
+
+
+ACTUALIZAR LA APP EN EL FUTURO
+------------------------------
+Si cambias algún archivo, súbelo de nuevo al repo (Add file -> Upload files,
+mismo nombre, Commit). La web se actualiza sola en 1-2 min. En el iPhone,
+cierra la app del todo y vuelve a abrirla para que coja la versión nueva.
+
+
+NOTAS
+-----
+- El mapa (el fondo con las calles) necesita internet. La app y tus datos
+  guardados sí funcionan sin conexión.
+- Si el mapa no carga tras instalar, revisa que subiste la carpeta "leaflet"
+  completa y que la dirección termina en  /saboreo/

@@ -1,0 +1,37 @@
+SABOREO · Madrid — versión 1 (prototipo funcional)
+==================================================
+
+CÓMO ABRIRLA
+------------
+Doble clic en "index.html". Se abre en tu navegador. No hay que instalar nada.
+(Recomendado: Chrome o Edge.)
+
+ARCHIVOS
+--------
+- index.html  -> la app
+- data.js     -> los 6.063 restaurantes de Madrid (descargados de OpenStreetMap)
+- LEEME.txt   -> esto
+
+IMPORTANTE: index.html y data.js deben estar SIEMPRE en la misma carpeta.
+
+QUÉ HACE
+--------
+- Mapa claro (fondo blanco) de Madrid.
+- Muestra ~6.000 restaurantes de Madrid al instante (sin depender de internet).
+- Colores de Saboreo: naranja (puntos) y verde (tus sitios guardados).
+- Buscador arriba a la derecha.
+- Clic en un punto -> panel lateral -> añade platos con foto/vídeo y descripción.
+- Botón "Añadir sitio" (abajo derecha) = modo híbrido: clic en el mapa para
+  añadir un restaurante que falte.
+
+DÓNDE SE GUARDAN TUS FOTOS Y NOTAS
+----------------------------------
+En tu navegador (IndexedDB), privado y solo tuyo, en este ordenador.
+Si borras los datos del navegador, se pierden.
+
+LÍMITES DE ESTA VERSIÓN
+-----------------------
+- Datos locales: no se sincronizan con el móvil ni hay nube (todavía).
+- Cobertura OpenStreetMap ~80-85%; por eso existe el modo híbrido.
+
+Datos de mapa: © OpenStreetMap · © CARTO
