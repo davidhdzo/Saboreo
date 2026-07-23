@@ -1468,7 +1468,7 @@ const SYNC={
     if(error)throw new Error('prefs push: '+error.message);
     localStorage.setItem(this.k('prefs_mts'),now);
   },
-  async pushPlace(id){
+  async pushPlace(id,tasks){   // si se pasa "tasks", las subidas de fotos se encolan ahí (para subirlas en paralelo) en vez de una a una
     if(!this.user)return;const rec=saved.get(id);if(!rec)return;
     const up=this.uploaded(),dishes=[];
     for(const d of rec.dishes){
@@ -1479,8 +1479,8 @@ const SYNC={
         if(!up.has(d.mid)){
           const blob=dishBlob(d);
           if(blob&&blob.size>48*1024*1024){this._skip=(this._skip||0)+1;up.add(d.mid);}   // >48MB: no cabe en el plan gratis (límite 50MB/archivo) -> se salta y no se reintenta
-          else{try{const {error}=await this.client.storage.from('media').upload(this.user.id+'/'+id+'/'+d.mid,blob,{upsert:true,contentType:d.mtype||'application/octet-stream'});
-            if(!error)up.add(d.mid);else{this._mediaErr=error.message;console.warn('[sync] media',error);}}catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}}
+          else if(tasks){tasks.push({path:this.user.id+'/'+id+'/'+d.mid,blob,mtype:d.mtype,mid:d.mid});}
+          else{await this.uploadOne({path:this.user.id+'/'+id+'/'+d.mid,blob,mtype:d.mtype,mid:d.mid},up);}
         }
       }
       dishes.push(o);
@@ -1491,10 +1491,21 @@ const SYNC={
     if(error)throw new Error('place push: '+error.message);
     const m=this.placeMts();m[id]=now;this.savePlaceMts(m);
   },
+  async uploadOne(t,up){
+    try{const {error}=await this.client.storage.from('media').upload(t.path,t.blob,{upsert:true,contentType:t.mtype||'application/octet-stream'});
+      if(!error)up.add(t.mid);else{this._mediaErr=error.message;console.warn('[sync] media',error);}}
+    catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}
+  },
   async pushAllLocal(){
-    const ids=[...saved.keys()];let i=0;
     await this.pushPrefs();
-    for(const id of ids){i++;this.setState('Subiendo… '+i+'/'+ids.length);try{await this.pushPlace(id);}catch(e){}}
+    const ids=[...saved.keys()],tasks=[];
+    // 1) subir los datos (rápido) y reunir la lista de fotos/vídeos a subir
+    let i=0;for(const id of ids){i++;this.setState('Preparando… '+i+'/'+ids.length);try{await this.pushPlace(id,tasks);}catch(e){}}
+    // 2) subir las fotos/vídeos en paralelo (varias a la vez)
+    const up=this.uploaded();const total=tasks.length;let done=0;
+    const worker=async()=>{while(tasks.length){const t=tasks.pop();await this.uploadOne(t,up);done++;this.setState('Subiendo fotos… '+done+'/'+total);if(done%5===0)this.saveUploaded(up);}};
+    await Promise.all(Array.from({length:Math.min(4,total||1)},()=>worker()));
+    this.saveUploaded(up);
   },
 
   /* ---- bajada desde la nube ---- */
