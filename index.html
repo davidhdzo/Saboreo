@@ -596,13 +596,31 @@ function cuisineKey(raw){const s=(raw||'').toLowerCase();for(const c of CUISINES
 function cuisineEmoji(key){const c=CUISINES.find(c=>c.key===key);return c?c.em:'🍴';}
 
 /* IndexedDB */
-const DB={db:null,
-  open(){return new Promise((res,rej)=>{const r=indexedDB.open('saboreo',1);
+const DB={db:null,_opening:null,
+  open(){return this._opening||(this._opening=new Promise((res,rej)=>{const r=indexedDB.open('saboreo',1);
     r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('places'))d.createObjectStore('places',{keyPath:'id'});};
-    r.onsuccess=e=>{this.db=e.target.result;res()};r.onerror=e=>rej(e);});},
-  put(o){return new Promise((res,rej)=>{const t=this.db.transaction('places','readwrite');t.objectStore('places').put(o);t.oncomplete=res;t.onerror=rej;});},
-  get(id){return new Promise(res=>{const t=this.db.transaction('places','readonly');const q=t.objectStore('places').get(id);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});},
-  all(){return new Promise(res=>{const t=this.db.transaction('places','readonly');const q=t.objectStore('places').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);});}
+    r.onsuccess=e=>{this.db=e.target.result;this._opening=null;
+      this.db.onclose=()=>{this.db=null;};                                   // iOS cierra la conexión al ir a segundo plano
+      this.db.onversionchange=()=>{try{this.db.close();}catch(_){}this.db=null;};
+      res(this.db);};
+    r.onerror=()=>{this._opening=null;rej(r.error||new Error('IDB open error'));};}));},
+  async ready(){return this.db||await this.open();},
+  // ejecuta una transacción; si la conexión está cerrada, reabre y reintenta una vez
+  async _tx(mode,work){
+    for(let i=0;i<2;i++){
+      const db=await this.ready();
+      try{
+        return await new Promise((res,rej)=>{
+          let t;try{t=db.transaction('places',mode);}catch(err){rej(err);return;}
+          work(t.objectStore('places'),t,res,rej);
+          t.onabort=()=>rej(t.error||new Error('tx abort'));
+        });
+      }catch(e){this.db=null;if(i===1)throw e;}
+    }
+  },
+  put(o){return this._tx('readwrite',(store,t,res,rej)=>{store.put(o);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});},
+  get(id){return this._tx('readonly',(store,t,res)=>{const q=store.get(id);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});},
+  all(){return this._tx('readonly',(store,t,res)=>{const q=store.getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);});}
 };
 
 let map,markerLayer,markers=new Map(),current=null,addMode=false,pendingMedia=null,activeCuisine=null,youMarker=null,highlightId=null,pendingCourse='plato',mapMode='all';
@@ -1630,7 +1648,7 @@ const SYNC={
       this.setState('Al día ✓'+extra);if(!silent)toast('Sincronizado ✓'+extra);
       this.flushDirty();   // sube lo que quedara pendiente
     }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);
-      const net=/fetch|network|timeout|load failed|ECONN|Failed to send|NetworkError/i.test(msg)||!navigator.onLine;
+      const net=/fetch|network|timeout|load failed|ECONN|Failed to send|NetworkError|closing|IDBDatabase|indexeddb|database connection/i.test(msg)||!navigator.onLine;
       if(net){this.setState('Sin conexión · se reintentará solo');if(!silent)toast('Sin conexión · se reintentará solo');clearTimeout(this._retry);this._retry=setTimeout(()=>{if(this.user&&navigator.onLine)this.pullAll(true);},12000);}
       else{this.setState('Error: '+msg);if(!silent)toast('Sync: '+msg);}
     }
