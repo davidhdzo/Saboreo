@@ -953,7 +953,8 @@ async function doPaste(){
   const btn=document.getElementById('pasteGo');if(btn){btn.disabled=true;btn.textContent='Pegando…';}
   for(const id of ids){try{await pasteInto(id,copyBuffer.dishes);}catch(e){}}
   saveVisited();refreshVisible();
-  if(current&&ids.includes(current)){renderInfo(current);renderDishes(current);}
+  copyBuffer=null;                                   // ya pegado: se deja de ofrecer "Pegar" en cada restaurante
+  if(current){renderInfo(current);if(ids.includes(current))renderDishes(current);}
   closeOverlay();toast('Pegado en '+ids.length+' sitio(s) ✓');
 }
 /* asignar/quitar el tipo de cocina de un restaurante */
@@ -1584,7 +1585,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v13 · 23-jul (editar nombre sitio)',
+  BUILD:'v14 · 23-jul (pegar se limpia)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
