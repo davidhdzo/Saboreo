@@ -704,13 +704,36 @@ function makeIcon(p){
   const dot=`<i style="background:${col};box-shadow:0 0 0 2px ${hexA(col,.18)},0 1px 4px rgba(0,0,0,.25)"></i>`;
   return L.divIcon({className:'',html:`<div class="pin">${dot}${ring}</div>`,iconSize:[14,14],iconAnchor:[7,7]});
 }
+let _seenMarkers=new Set();
+// clave que resume el "aspecto" del pin: si no cambia, no se toca el icono (evita parpadeos)
+function iconKey(p){const hl=p.id===highlightId;return (hl?'hl':(isVisited(p.id)?'v':'n'))+'|'+(favorites.has(p.id)?1:0);}
+// crea el marker si es nuevo, o lo reutiliza tal cual estaba si ya existía (sin quitarlo/ponerlo -> sin parpadeo)
 function addMarker(p,label,labelText){
-  const been=isVisited(p.id);
-  const m=L.marker([p.lat,p.lng],{icon:makeIcon(p),keyboard:false});
-  m.on('click',e=>{L.DomEvent.stopPropagation(e);openPanel(p.id);});
-  const hl=p.id===highlightId;
-  if(label)m.bindTooltip(labelText||p.name,{permanent:true,interactive:true,direction:'top',className:'lbl'+(hl?' is-hl':(been?' is-saved':'')),offset:[0,hl?-16:(been?-14:-7)]});
-  m.addTo(markerLayer);markers.set(p.id,m);
+  const id=p.id,hl=p.id===highlightId,been=isVisited(p.id);
+  let m=markers.get(id);
+  if(!m){
+    m=L.marker([p.lat,p.lng],{icon:makeIcon(p),keyboard:false});
+    m.on('click',e=>{L.DomEvent.stopPropagation(e);openPanel(p.id);});
+    m._ikey='';
+    m.addTo(markerLayer);markers.set(id,m);
+  }
+  const key=iconKey(p);
+  if(m._ikey!==key){m.setIcon(makeIcon(p));m._ikey=key;}
+  const text=labelText||p.name,className='lbl'+(hl?' is-hl':(been?' is-saved':'')),offset=[0,hl?-16:(been?-14:-7)];
+  if(label){
+    if(!m._tt||m._ttText!==text||m._ttClass!==className){
+      if(m._tt)m.unbindTooltip();
+      m.bindTooltip(text,{permanent:true,interactive:true,direction:'top',className,offset});
+      m._tt=true;m._ttText=text;m._ttClass=className;
+    }
+  }else if(m._tt){m.unbindTooltip();m._tt=false;m._ttText=null;m._ttClass=null;}
+  _seenMarkers.add(id);
+}
+// quita solo los pines que YA NO tocan mostrarse; los que siguen visibles no se recrean -> sin parpadeo
+function pruneMarkers(){
+  for(const [id,m] of Array.from(markers)){
+    if(!_seenMarkers.has(id)){markerLayer.removeLayer(m);markers.delete(id);}
+  }
 }
 function dist2(a,c){const dx=a.lng-c.lng,dy=a.lat-c.lat;return dx*dx+dy*dy;}
 function hasDishes(id){const r=saved.get(id);return !!(r&&r.dishes.length>0);}
@@ -719,7 +742,7 @@ let hintWanted=false;   // el mapa "querría" mostrar el aviso de acercarse (seg
 // mostramos el aviso solo si no hay sugerencias de búsqueda abiertas (para que no se solapen)
 function applyHint(){document.getElementById('zoomHint').classList.toggle('show',hintWanted&&!document.getElementById('suggest').classList.contains('show'));}
 function refreshVisible(){
-  markerLayer.clearLayers();markers.clear();
+  _seenMarkers=new Set();      // lo que se marque aquí se conserva; el resto se quita al final (pruneMarkers)
   const z=map.getZoom();
   _lastRefreshCenter=map.getCenter();_lastRefreshZoom=z;
   if(mapMode==='scores'){   // "Notas": solo sitios con nota; media junto al nombre; top 10 con ⭐
@@ -745,13 +768,13 @@ function refreshVisible(){
       const pt=map.latLngToContainerPoint([o.p.lat,o.p.lng]);
       addMarker(o.p,fits(pt,txt),txt);   // el pin siempre; el nombre solo si no se solapa
     });
-    return;
+    pruneMarkers();return;
   }
   if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
     hintWanted=false;applyHint();
     const inSet=mapMode==='eaten'?(p=>isVisited(p.id)):(p=>favorites.has(p.id));
     PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine)).forEach(p=>addMarker(p,true));
-    return;
+    pruneMarkers();return;
   }
   const b=map.getBounds(),c=map.getCenter();
   const filtered=!!activeCuisine;                        // si hay filtro de cocina, mostramos esos sitios a cualquier zoom
@@ -809,6 +832,7 @@ function refreshVisible(){
       addMarker(p,tryLabel(p,pt,false));
     }
   }
+  pruneMarkers();
 }
 
 /* data */
