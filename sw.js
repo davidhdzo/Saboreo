@@ -1,9 +1,11 @@
-/* Saboreo · service worker (v3)
+/* Saboreo · service worker (v5)
    - HTML (la app): primero red, cache de respaldo -> siempre ves lo último online.
    - Archivos propios (data.js, leaflet, iconos): cache al instante + refresco en segundo plano.
    - Baldosas del mapa (cartocdn): cache-first -> una vez vistas, cargan AL INSTANTE y no se
-     recargan una y otra vez. Se guardan en una caché aparte para no mezclarlas con la app. */
-const CACHE = 'saboreo-v4';
+     recargan una y otra vez. Se guardan en una caché aparte para no mezclarlas con la app.
+   - Nunca se cachea una respuesta rota/incompleta (solo res.ok), para que una descarga
+     a medias en móvil no quede grabada para siempre y rompa el catálogo. */
+const CACHE = 'saboreo-v5';
 const TILES = 'saboreo-tiles-v1';
 const SHELL = [
   './',
@@ -38,7 +40,7 @@ self.addEventListener('fetch', e => {
   if (url.hostname.endsWith('basemaps.cartocdn.com')) {
     e.respondWith(
       caches.open(TILES).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {
-        c.put(req, res.clone()).catch(() => {});
+        if (res.ok) c.put(req, res.clone()).catch(() => {});
         return res;
       })))
     );
@@ -53,8 +55,7 @@ self.addEventListener('fetch', e => {
   if (isHTML) {
     e.respondWith(
       fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
         return res;
       }).catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
     );
@@ -62,11 +63,12 @@ self.addEventListener('fetch', e => {
   }
 
   // Resto de archivos propios: cache al instante + refresco en segundo plano.
+  // Importante: solo se guarda en caché una respuesta completa y correcta (res.ok),
+  // para no dejar grabada para siempre una descarga a medias (p.ej. con mala cobertura móvil).
   e.respondWith(
     caches.match(req).then(hit => {
       const net = fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
         return res;
       }).catch(() => hit);
       return hit || net;

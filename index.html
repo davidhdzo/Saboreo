@@ -1569,6 +1569,8 @@ function wire(){
 }
 
 async function boot(){
+  // pide al sistema que no borre los datos guardados (favoritos, "he ido", fotos) bajo presión de espacio
+  if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
   initMap();wire();buildCuisineChips();buildPlaces();
   // si la base de datos local falla (bug de iOS), arrancamos igualmente: la nube repondrá tus datos
   try{
@@ -1679,7 +1681,10 @@ const SYNC={
     this.saveUploaded(up);
   },
 
-  /* ---- bajada desde la nube ---- */
+  /* ---- bajada desde la nube ----
+     Primero se baja solo el "papeleo" (nombres, platos, notas) de tus restaurantes -> aparecen
+     al instante. Las fotos/vídeos, que son lo lento, se descargan aparte en segundo plano
+     (hydrateMedia) sin retrasar la apertura de la app. */
   async pullAll(silent){
     if(!this.user)return;this.setState('Sincronizando…');this._skip=0;this._mediaErr=null;
     try{
@@ -1689,11 +1694,12 @@ const SYNC={
       if(pr.data)this.mergePrefs(pr.data,first);
       const rs=await this.client.from('places').select('place_id,dishes,updated_at').eq('user_id',this.user.id);
       if(rs.error)throw new Error('places: '+rs.error.message);
-      if(rs.data)for(const row of rs.data)await this.mergePlace(row,first);
-      if(first){await this.pushAllLocal();localStorage.setItem(this.k('synced'),'1');}
+      const mediaQueue=[];
+      if(rs.data)for(const row of rs.data)await this.mergePlace(row,first,mediaQueue);
       applyCkeyOverrides();refreshVisible();if(current)updateFavStar(current);
-      let extra='';if(this._skip)extra=' · '+this._skip+' vídeo(s) >50MB no caben en el plan gratis';else if(this._mediaErr)extra=' · aviso fotos: '+this._mediaErr;
-      this.setState('Al día ✓'+extra);if(!silent)toast('Sincronizado ✓'+extra);
+      this.setState('Al día ✓');if(!silent)toast('Sincronizado ✓');
+      this.hydrateMedia(mediaQueue);   // fotos/vídeos: siguen bajando solas, sin bloquear lo anterior
+      if(first)this.pushAllLocal().then(()=>localStorage.setItem(this.k('synced'),'1')).catch(e=>console.warn('[sync] subida inicial',e));
       this.flushDirty();   // sube lo que quedara pendiente
     }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);this._lastErr=msg;
       const net=/fetch|network|timeout|load failed|ECONN|Failed to send|NetworkError|closing|IDBDatabase|indexeddb|indexed database|server lost|database connection/i.test(msg)||!navigator.onLine;
@@ -1719,7 +1725,9 @@ const SYNC={
     }
     this._silent=false;
   },
-  async mergePlace(row,first){
+  // solo el "papeleo" (nombre, platos, notas): sin esperar a bajar fotos/vídeos, por eso es rápido.
+  // lo que falte por bajar de fotos/vídeos se apunta en mediaQueue para hydrateMedia().
+  async mergePlace(row,first,mediaQueue){
     const id=this.coerceId(row.place_id);
     const payload=row.dishes||{};
     const cloudDishes=Array.isArray(payload)?payload:(payload.dishes||[]);
@@ -1733,10 +1741,8 @@ const SYNC={
       if(cd.mid){
         d.mid=cd.mid;d.mtype=cd.mtype||'';
         const ex=localRec&&localRec.dishes.find(x=>x.mid===cd.mid&&dishHasMedia(x));
-        if(ex){d.buf=ex.buf;d.blob=ex.blob;}
-        else{try{const dl=await this.client.storage.from('media').download(this.user.id+'/'+id+'/'+cd.mid);
-          if(dl.data){d.buf=await dl.data.arrayBuffer();if(!d.mtype)d.mtype=dl.data.type;}}catch(e){}}
-        up.add(cd.mid);
+        if(ex){d.buf=ex.buf;d.blob=ex.blob;up.add(cd.mid);}
+        else mediaQueue.push({id,d});   // se baja después en segundo plano (hydrateMedia), no aquí
       }
       dishes.push(d);
     }
@@ -1746,6 +1752,31 @@ const SYNC={
     saved.set(id,rec);
     if(rec.meta&&!known.has(id)){const p={...rec.meta,ckey:rec.meta.ckey||cuisineKey(rec.meta.cat)};known.set(id,p);PLACES.push(p);}
     m[id]=row.updated_at;this.savePlaceMts(m);
+  },
+  // baja en paralelo (4 a la vez) las fotos/vídeos que falten, sin bloquear la apertura de la app;
+  // según van llegando se guardan y, si tienes ese restaurante abierto, se refresca solo.
+  async hydrateMedia(mediaQueue){
+    if(!mediaQueue.length)return;
+    const up=this.uploaded(),touched=new Set();
+    const worker=async()=>{
+      while(mediaQueue.length){
+        const {id,d}=mediaQueue.pop();
+        try{
+          const dl=await this.client.storage.from('media').download(this.user.id+'/'+id+'/'+d.mid);
+          if(dl.data){d.buf=await dl.data.arrayBuffer();if(!d.mtype)d.mtype=dl.data.type;}
+        }catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}
+        up.add(d.mid);touched.add(id);
+      }
+    };
+    await Promise.all(Array.from({length:Math.min(4,mediaQueue.length)},()=>worker()));
+    this.saveUploaded(up);
+    for(const id of touched){
+      const rec=saved.get(id);if(!rec)continue;
+      this._silent=true;await DB.put(rec);this._silent=false;
+      if(current===id)renderInfo(id);
+    }
+    let extra=this._mediaErr?' · aviso fotos: '+this._mediaErr:'';
+    this.setState('Al día ✓'+extra);
   },
 
   startPolling(){
