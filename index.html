@@ -202,6 +202,14 @@
   .listitem .t{flex:1;min-width:0}.listitem .t b{display:block;font-size:14px}.listitem .t small{color:var(--txt-dim);font-size:12px}
   .pastelist{max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px}
   .pasterow input{width:20px;height:20px;accent-color:var(--orange);flex:none;margin:0;cursor:pointer}
+  .pricelist{max-height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px}
+  .pricerow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px;border:1px solid var(--line);border-radius:13px;margin-bottom:10px}
+  .pricerow .t{flex:1;min-width:0;font-size:14px;font-weight:600}
+  .pricerow .t small{display:block;color:var(--txt-dim);font-size:11.5px;font-weight:500;margin-top:2px}
+  .pricerow .pinput{display:flex;align-items:center;gap:5px;flex:none}
+  .pricerow .pinput input{width:74px;background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:9px 8px;font-size:14px;font-family:inherit;outline:none;text-align:right;transition:.2s}
+  .pricerow .pinput input:focus{border-color:var(--orange)}
+  .pricerow .pinput span{color:var(--txt-dim);font-size:13px;font-weight:600}
 
   @media(max-width:560px){.brand small{display:none}.dock button{min-width:48px;padding:7px 8px}.dock button span.lb{display:none}.dock button .ic{font-size:21px}}
 
@@ -882,6 +890,10 @@ function renderInfo(id){
          `<p class="info-hint">Aún no has guardado platos de este sitio.</p>`;
   }
   if(p.custom)acts+=`<button class="bigbtn" id="actRename">✏️ Editar nombre del sitio</button>`;
+  if(n>0){
+    const total=calcTotalPrice(id);
+    acts+=`<button class="bigbtn" id="actPrices">💶 Precios${total!=null?' · '+fmtEUR(total):''}</button>`;
+  }
   if(n>0)acts+=`<button class="bigbtn" id="actCopy">📋 Copiar platos (${n})</button>`;
   if(copyBuffer&&copyBuffer.dishes.length)acts+=`<button class="bigbtn" id="actPaste">📥 Pegar «${esc(copyBuffer.name)}» (${copyBuffer.dishes.length})…</button>`;
   const ccChips=CUISINES.map(c=>`<button class="ccchip${p.ckey===c.key?' on':''}" data-k="${c.key}" style="--cc:${c.color}"><span>${c.em}</span>${c.label}</button>`).join('')+
@@ -903,6 +915,7 @@ function renderInfo(id){
   const av=document.getElementById('actView');if(av)av.onclick=()=>openRestFullscreen(id);
   const aa=document.getElementById('actAdd');if(aa)aa.onclick=()=>{clearForm();showPane('add');};
   const ac=document.getElementById('actCopy');if(ac)ac.onclick=()=>copyDishes(id);
+  const apr=document.getElementById('actPrices');if(apr)apr.onclick=()=>openPricesSheet(id);
   const ap=document.getElementById('actPaste');if(ap)ap.onclick=openPasteSheet;
   const arn=document.getElementById('actRename');if(arn)arn.onclick=()=>renamePlace(id);
 }
@@ -918,6 +931,45 @@ function renamePlace(id){
   document.getElementById('pName').textContent=name;
   renderInfo(id);refreshVisible();
   toast('Nombre actualizado ✓');
+}
+
+/* ---- precios: un apartado aparte para poner el precio de cada plato de una vez, con el total ---- */
+function openPricesSheet(id){
+  const rec=saved.get(id);if(!rec||!rec.dishes.length)return;
+  const groups=groupDishesByName(rec.dishes);
+  document.getElementById('sheetTitle').textContent='💶 Precios';
+  const body=document.getElementById('sheetBody');
+  const rows=groups.map(g=>{
+    const withPrice=g.dishes.find(d=>typeof d.price==='number');
+    const val=withPrice?withPrice.price:'';
+    const em=g.course==='postre'?'🍰':(g.course==='entrante'?'🥗':'🍽️');
+    const photos=g.dishes.length>1?`<small>${g.dishes.length} fotos de este plato</small>`:'';
+    return `<div class="pricerow"><div class="t">${em} ${esc(g.name||'Sin nombre')}${photos}</div>`+
+           `<div class="pinput"><input type="number" inputmode="decimal" step="0.10" min="0" class="priceinp" data-key="${esc(g.key)}" placeholder="0,00" value="${val}"><span>€</span></div></div>`;
+  }).join('');
+  body.innerHTML=`<div class="pricelist">${rows}</div>`+
+    `<div class="stat"><span>Total</span><b id="priceTotalVal">0,00€</b></div>`+
+    `<button class="save" id="pricesSave">Guardar precios</button>`;
+  const updateTotal=()=>{
+    let s=0;document.querySelectorAll('.priceinp').forEach(inp=>{const v=parseFloat(inp.value.replace(',','.'));if(!isNaN(v))s+=v;});
+    document.getElementById('priceTotalVal').textContent=fmtEUR(s);
+  };
+  document.querySelectorAll('.priceinp').forEach(inp=>inp.oninput=updateTotal);
+  updateTotal();
+  document.getElementById('pricesSave').onclick=()=>savePrices(id,groups);
+  document.getElementById('overlay').classList.add('show');
+}
+async function savePrices(id,groups){
+  const rec=saved.get(id);if(!rec)return;
+  document.querySelectorAll('.priceinp').forEach(inp=>{
+    const g=groups.find(x=>x.key===inp.dataset.key);if(!g)return;
+    const raw=inp.value.trim().replace(',','.'),val=raw===''?null:parseFloat(raw);
+    for(const d of g.dishes){if(val==null||isNaN(val))delete d.price;else d.price=val;}   // el mismo precio para todas las fotos de ese plato
+  });
+  await DB.put(rec);saved.set(id,rec);
+  closeOverlay();
+  if(current===id)renderInfo(id);
+  toast('Precios guardados ✓');
 }
 
 /* ---- copiar/pegar platos entre restaurantes de la misma cadena ---- */
@@ -1012,29 +1064,43 @@ function toggleBeen(id){
   if(current===id)renderInfo(id);
   refreshVisible();toast(visited.has(id)?'Marcado como visitado 😋':'Quitado de visitados');
 }
+const avg=a=>a.reduce((s,x)=>s+x,0)/a.length;
+// agrupa platos por nombre (sin mayúsculas/acentos): varias fotos del MISMO plato cuentan como uno solo
+// (para la nota media y, más abajo, para el total de precio). Sin nombre -> no se agrupa con otros.
+function groupDishesByName(dishes){
+  const groups=new Map();
+  for(const d of dishes){
+    const key=norm(d.name)||('_'+d.ts);
+    if(!groups.has(key))groups.set(key,{key,name:d.name,course:d.course,dishes:[]});
+    groups.get(key).dishes.push(d);
+  }
+  return [...groups.values()];
+}
 function calcScores(id){
   const rec=saved.get(id),out={comida:null,postre:null,global:null,n:0};
   if(!rec||!rec.dishes.length)return out;
   const rated=rec.dishes.filter(d=>typeof d.rating==='number');
   out.n=rated.length;if(!rated.length)return out;
-  const avg=a=>a.reduce((s,x)=>s+x,0)/a.length;
-  // varias fotos del MISMO plato (igual nombre) no deben contar por duplicado en la media:
-  // se promedian entre sí primero y esa media cuenta como un único plato.
-  const groups=new Map();
-  for(const d of rated){
-    const key=norm(d.name)||('_'+d.ts);   // sin nombre (o repetido vacío): no se agrupa con otros
-    if(!groups.has(key))groups.set(key,{course:d.course,ratings:[]});
-    groups.get(key).ratings.push(d.rating);
-  }
-  const dishes=[...groups.values()].map(g=>({course:g.course,rating:avg(g.ratings)}));
-  const com=dishes.filter(g=>g.course!=='postre').map(g=>g.rating);
-  const pos=dishes.filter(g=>g.course==='postre').map(g=>g.rating);
+  const dishAvgs=groupDishesByName(rated).map(g=>({course:g.course,rating:avg(g.dishes.map(d=>d.rating))}));
+  const com=dishAvgs.filter(g=>g.course!=='postre').map(g=>g.rating);
+  const pos=dishAvgs.filter(g=>g.course==='postre').map(g=>g.rating);
   if(com.length)out.comida=avg(com);
   if(pos.length)out.postre=avg(pos);
   if(out.comida!=null&&out.postre!=null)out.global=out.comida*0.7+out.postre*0.3;
   else out.global=out.comida!=null?out.comida:out.postre;
   return out;
 }
+// suma de precios del restaurante: cada NOMBRE de plato cuenta una sola vez, aunque tenga varias fotos
+function calcTotalPrice(id){
+  const rec=saved.get(id);if(!rec||!rec.dishes.length)return null;
+  let sum=0,any=false;
+  for(const g of groupDishesByName(rec.dishes)){
+    const withPrice=g.dishes.find(d=>typeof d.price==='number');
+    if(withPrice){sum+=withPrice.price;any=true;}
+  }
+  return any?sum:null;
+}
+function fmtEUR(n){return n.toFixed(2).replace('.',',')+'€';}
 function renderScores(id){
   const box=document.getElementById('pScores'),s=calcScores(id);
   if(s.global==null){box.className='scores empty-sc';box.innerHTML='';return;}
@@ -1491,7 +1557,7 @@ async function exportData(){
   for(const r of recs){
     const dishes=[];
     for(const d of r.dishes){
-      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:d.ts,mtype:d.mtype};
+      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,price:d.price,fit:d.fit,ts:d.ts,mtype:d.mtype};
       const mb=dishBlob(d);if(mb)o.media=await blobToDataURL(mb);
       dishes.push(o);
     }
@@ -1512,7 +1578,7 @@ async function importData(file){
     for(const pl of data.places){
       const dishes=[];
       for(const d of pl.dishes){
-        const dish={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:d.ts,mtype:d.mtype};
+        const dish={name:d.name,desc:d.desc,course:d.course,rating:d.rating,price:d.price,fit:d.fit,ts:d.ts,mtype:d.mtype};
         if(d.media){try{dish.buf=await (await fetch(d.media)).arrayBuffer();}catch(e){}}
         dishes.push(dish);
       }
@@ -1681,7 +1747,7 @@ const SYNC={
     if(!this.user)return;const rec=saved.get(id);if(!rec)return;
     const up=this.uploaded(),dishes=[];
     for(const d of rec.dishes){
-      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,fit:d.fit,ts:d.ts};
+      const o={name:d.name,desc:d.desc,course:d.course,rating:d.rating,price:d.price,fit:d.fit,ts:d.ts};
       if(dishHasMedia(d)){
         if(!d.mid)d.mid=_mid();
         o.mid=d.mid;o.mtype=d.mtype||'';
@@ -1773,7 +1839,7 @@ const SYNC={
     if(localRec&&!first&&!cloudNewer)return;
     const up=this.uploaded(),dishes=[];
     for(const cd of cloudDishes){
-      const d={name:cd.name,desc:cd.desc,course:cd.course,rating:cd.rating,fit:cd.fit,ts:cd.ts};
+      const d={name:cd.name,desc:cd.desc,course:cd.course,rating:cd.rating,price:cd.price,fit:cd.fit,ts:cd.ts};
       if(cd.mid){
         d.mid=cd.mid;d.mtype=cd.mtype||'';
         const ex=localRec&&localRec.dishes.find(x=>x.mid===cd.mid&&dishHasMedia(x));
