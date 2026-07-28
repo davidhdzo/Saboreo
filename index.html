@@ -528,6 +528,7 @@
         <div class="stat"><span>Sesión iniciada</span><b id="authEmailShown">—</b></div>
         <div class="stat"><span>Estado</span><b id="authState">—</b></div>
         <button class="save" id="authSyncNow">🔄 Sincronizar ahora</button>
+        <button class="save sec" id="authRecover" style="margin-top:10px">🩹 Recuperar fotos perdidas</button>
         <button class="save sec" id="authSignOut" style="margin-top:10px">Cerrar sesión</button>
       </div>
       <div class="empty" id="authVer" style="margin-top:14px;padding:8px;font-size:11px">—</div>
@@ -1722,7 +1723,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v24 · 28-jul (no perder la foto al subir sin haberla bajado)',
+  BUILD:'v25 · 28-jul (recuperar fotos huérfanas)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -1922,6 +1923,49 @@ const SYNC={
     this.setState('Al día ✓'+extra);
   },
 
+  /* ---- recuperación única de fotos "huérfanas" ----
+     Bug ya arreglado (ver pushPlace): durante un tiempo, algunos dispositivos pudieron subir un
+     restaurante sin la referencia ("mid") a fotos que en realidad SÍ seguían en Storage. Esta
+     herramienta busca, para cada restaurante, los archivos que hay en tu carpeta de Storage y
+     los reasocia a los platos que se quedaron sin "mid" -SOLO cuando el número de archivos
+     "sueltos" coincide exactamente con el número de platos sin foto, emparejando por orden de
+     creación (mismo orden en que se añadieron)-. Si no coincide, ese restaurante se deja para
+     revisar a mano, en vez de arriesgarse a poner la foto equivocada en el plato equivocado. */
+  async recoverOrphanedMedia(){
+    if(!this.user)return;
+    this.setState('Buscando fotos huérfanas…');
+    let placesChecked=0,placesFixed=0,dishesFixed=0;const unclear=[];
+    try{
+      const {data:rows,error}=await this.client.from('places').select('place_id,dishes,updated_at').eq('user_id',this.user.id);
+      if(error)throw new Error('places: '+error.message);
+      for(const row of rows||[]){
+        placesChecked++;
+        const payload=row.dishes||{};
+        if(Array.isArray(payload))continue;                         // formato antiguo sin meta/dishes: se ignora
+        const dishes=payload.dishes||[];
+        const usedMids=new Set(dishes.filter(d=>d.mid).map(d=>d.mid));
+        const missing=dishes.filter(d=>!d.mid).sort((a,b)=>(a.ts||0)-(b.ts||0));
+        if(!missing.length)continue;
+        const id=this.coerceId(row.place_id);
+        const {data:files,error:lerr}=await this.client.storage.from('media').list(this.user.id+'/'+id,{limit:200,sortBy:{column:'created_at',order:'asc'}});
+        if(lerr||!files)continue;
+        const free=files.filter(f=>f.name&&!usedMids.has(f.name));   // archivos que ningún plato reclama ya
+        if(!free.length)continue;
+        const name=(payload.meta&&payload.meta.name)||String(id);
+        if(free.length!==missing.length){unclear.push(`${name} (${missing.length} plato(s) sin foto, ${free.length} archivo(s) sueltos)`);continue;}
+        missing.forEach((d,i)=>{d.mid=free[i].name;d.mtype=(free[i].metadata&&free[i].metadata.mimetype)||'';});
+        const {error:uerr}=await this.client.from('places').upsert({user_id:this.user.id,place_id:row.place_id,dishes:payload,updated_at:new Date().toISOString()},{onConflict:'user_id,place_id'});
+        if(uerr){unclear.push(`${name} (fallo al guardar: ${uerr.message})`);continue;}
+        placesFixed++;dishesFixed+=missing.length;
+      }
+    }catch(e){this.setState('Error recuperando: '+((e&&e.message)||e));toast('Error recuperando fotos: '+((e&&e.message)||e));return;}
+    const resumen=`Recuperadas ${dishesFixed} foto(s) en ${placesFixed} restaurante(s) (de ${placesChecked} revisados)`+
+      (unclear.length?`. ${unclear.length} restaurante(s) no se pudieron emparejar solos: `+unclear.join(' · '):'.');
+    this.setState(resumen);toast(`Recuperadas ${dishesFixed} foto(s) en ${placesFixed} restaurante(s)`+(unclear.length?` · ${unclear.length} sin poder emparejar`:''));
+    console.log('[sync] recuperación de fotos:',resumen);
+    if(placesFixed)await this.pullAll(true);   // vuelve a bajar (y a hidratar) lo que se acaba de arreglar
+  },
+
   startPolling(){
     clearInterval(this._poll);
     this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}},45000);
@@ -1939,6 +1983,7 @@ const SYNC={
     document.getElementById('authSignUp').onclick=()=>this.signUp();
     document.getElementById('authSignOut').onclick=()=>this.signOut();
     document.getElementById('authSyncNow').onclick=()=>this.pullAll(false);
+    document.getElementById('authRecover').onclick=()=>this.recoverOrphanedMedia();
     document.getElementById('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')this.signIn();});
     const ver=document.getElementById('authVer');if(ver)ver.textContent='Saboreo · '+this.BUILD;
   },
