@@ -1722,7 +1722,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v22 · 28-jul (aviso real de fallos al bajar fotos)',
+  BUILD:'v23 · 28-jul (fotos atascadas: se reintentan solas)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -1861,7 +1861,13 @@ const SYNC={
     const diners=Array.isArray(payload)?null:payload.diners;
     const m=this.placeMts(),localMts=m[id],localRec=saved.get(id);
     const cloudNewer=!localMts||(row.updated_at>localMts);
-    if(localRec&&!first&&!cloudNewer)return;
+    if(localRec&&!first&&!cloudNewer){
+      // el "papeleo" ya está al día (nada cambió en la nube), pero puede que a este dispositivo
+      // le falte alguna foto/vídeo de una descarga anterior que no llegara a completarse
+      // (p.ej. se cerró la app a medias): se reintenta igualmente, para que no se quede atascada para siempre.
+      for(const d of localRec.dishes){if(d.mid&&!dishHasMedia(d))mediaQueue.push({id,d});}
+      return;
+    }
     const up=this.uploaded(),dishes=[];
     for(const cd of cloudDishes){
       const d={name:cd.name,desc:cd.desc,course:cd.course,rating:cd.rating,price:cd.price,fit:cd.fit,ts:cd.ts};
