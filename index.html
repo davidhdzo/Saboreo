@@ -1894,6 +1894,7 @@ const SYNC={
         try{
           const dl=await this.client.storage.from('media').download(this.user.id+'/'+id+'/'+d.mid);
           if(dl.data){d.buf=await dl.data.arrayBuffer();if(!d.mtype)d.mtype=dl.data.type;}
+          else if(dl.error){this._mediaErr=dl.error.message||String(dl.error);console.warn('[sync] media download',this.user.id+'/'+id+'/'+d.mid,dl.error);}
         }catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}
         up.add(d.mid);touched.add(id);
       }
