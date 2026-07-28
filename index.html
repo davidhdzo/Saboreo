@@ -1018,8 +1018,17 @@ function calcScores(id){
   const rated=rec.dishes.filter(d=>typeof d.rating==='number');
   out.n=rated.length;if(!rated.length)return out;
   const avg=a=>a.reduce((s,x)=>s+x,0)/a.length;
-  const com=rated.filter(d=>d.course!=='postre').map(d=>d.rating);
-  const pos=rated.filter(d=>d.course==='postre').map(d=>d.rating);
+  // varias fotos del MISMO plato (igual nombre) no deben contar por duplicado en la media:
+  // se promedian entre sí primero y esa media cuenta como un único plato.
+  const groups=new Map();
+  for(const d of rated){
+    const key=norm(d.name)||('_'+d.ts);   // sin nombre (o repetido vacío): no se agrupa con otros
+    if(!groups.has(key))groups.set(key,{course:d.course,ratings:[]});
+    groups.get(key).ratings.push(d.rating);
+  }
+  const dishes=[...groups.values()].map(g=>({course:g.course,rating:avg(g.ratings)}));
+  const com=dishes.filter(g=>g.course!=='postre').map(g=>g.rating);
+  const pos=dishes.filter(g=>g.course==='postre').map(g=>g.rating);
   if(com.length)out.comida=avg(com);
   if(pos.length)out.postre=avg(pos);
   if(out.comida!=null&&out.postre!=null)out.global=out.comida*0.7+out.postre*0.3;
