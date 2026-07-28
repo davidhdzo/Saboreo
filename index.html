@@ -210,6 +210,14 @@
   .pricerow .pinput input{width:74px;background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:9px 8px;font-size:14px;font-family:inherit;outline:none;text-align:right;transition:.2s}
   .pricerow .pinput input:focus{border-color:var(--orange)}
   .pricerow .pinput span{color:var(--txt-dim);font-size:13px;font-weight:600}
+  .dish-match{margin-bottom:18px}
+  .dish-match h4{margin:0 0 8px;font-size:14px}
+  .thumbs{display:flex;flex-wrap:wrap;gap:8px}
+  .thumbopt{width:64px;height:64px;border-radius:10px;overflow:hidden;border:2px solid var(--line);background:var(--surface-2);padding:0;cursor:pointer;display:grid;place-items:center;transition:.15s}
+  .thumbopt img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumbopt.sel{border-color:var(--orange);box-shadow:0 0 0 2px rgba(255,122,26,.25)}
+  .thumbopt.used{opacity:.32}
+  .novid-mini{font-size:22px}
 
   @media(max-width:560px){.brand small{display:none}.dock button{min-width:48px;padding:7px 8px}.dock button span.lb{display:none}.dock button .ic{font-size:21px}}
 
@@ -529,6 +537,7 @@
         <div class="stat"><span>Estado</span><b id="authState">—</b></div>
         <button class="save" id="authSyncNow">🔄 Sincronizar ahora</button>
         <button class="save sec" id="authRecover" style="margin-top:10px">🩹 Recuperar fotos perdidas</button>
+        <button class="save sec" id="authManualMatch" style="margin-top:10px">🔍 Revisar fotos a mano</button>
         <button class="save sec" id="authSignOut" style="margin-top:10px">Cerrar sesión</button>
       </div>
       <div class="empty" id="authVer" style="margin-top:14px;padding:8px;font-size:11px">—</div>
@@ -1723,7 +1732,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v26 · 28-jul (recuperación: mostrar por qué falla cada sitio)',
+  BUILD:'v27 · 28-jul (revisar y asignar fotos a mano)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -1935,6 +1944,7 @@ const SYNC={
     if(!this.user)return;
     this.setState('Buscando fotos huérfanas…');
     let placesChecked=0,placesFixed=0,dishesFixed=0;const unclear=[];
+    this._recoveryUnresolved=[];   // casos con más archivos que platos: hay que elegir a mano cuál es cuál
     try{
       const {data:rows,error}=await this.client.from('places').select('place_id,dishes,updated_at').eq('user_id',this.user.id);
       if(error)throw new Error('places: '+error.message);
@@ -1953,7 +1963,11 @@ const SYNC={
         if(!files||!files.length){unclear.push(`${name0} (0 archivos en su carpeta de Storage)`);continue;}
         const free=files.filter(f=>f.name&&!usedMids.has(f.name));   // archivos que ningún plato reclama ya
         if(!free.length){unclear.push(`${name0} (${files.length} archivo(s) en Storage, pero ya reclamados todos)`);continue;}
-        if(free.length!==missing.length){unclear.push(`${name0} (${missing.length} plato(s) sin foto, ${free.length} archivo(s) sueltos)`);continue;}
+        if(free.length!==missing.length){
+          unclear.push(`${name0} (${missing.length} plato(s) sin foto, ${free.length} archivo(s) sueltos)`);
+          this._recoveryUnresolved.push({id,rowPlaceId:row.place_id,name:name0,payload,missing,free});
+          continue;
+        }
         missing.forEach((d,i)=>{d.mid=free[i].name;d.mtype=(free[i].metadata&&free[i].metadata.mimetype)||'';});
         const {error:uerr}=await this.client.from('places').upsert({user_id:this.user.id,place_id:row.place_id,dishes:payload,updated_at:new Date().toISOString()},{onConflict:'user_id,place_id'});
         if(uerr){unclear.push(`${name0} (fallo al guardar: ${uerr.message})`);continue;}
@@ -1961,10 +1975,76 @@ const SYNC={
       }
     }catch(e){this.setState('Error recuperando: '+((e&&e.message)||e));toast('Error recuperando fotos: '+((e&&e.message)||e));return;}
     const resumen=`Recuperadas ${dishesFixed} foto(s) en ${placesFixed} restaurante(s) (de ${placesChecked} revisados)`+
-      (unclear.length?`. ${unclear.length} restaurante(s) no se pudieron emparejar solos: `+unclear.join(' · '):'.');
+      (unclear.length?`. ${unclear.length} restaurante(s) no se pudieron emparejar solos: `+unclear.join(' · '):'.')+
+      (this._recoveryUnresolved.length?` Pulsa "🔍 Revisar fotos a mano" para ${this._recoveryUnresolved.length} de ellos.`:'');
     this.setState(resumen);toast(`Recuperadas ${dishesFixed} foto(s) en ${placesFixed} restaurante(s)`+(unclear.length?` · ${unclear.length} sin poder emparejar`:''));
     console.log('[sync] recuperación de fotos:',resumen);
     if(placesFixed)await this.pullAll(true);   // vuelve a bajar (y a hidratar) lo que se acaba de arreglar
+  },
+
+  /* ---- revisión manual: cuando hay más archivos que platos sin foto, no se puede adivinar solo ----
+     (p.ej. reintentos duplicaron el archivo varias veces). Aquí eliges tú, viendo las fotos, cuál va
+     con cada plato. */
+  openManualRecovery(){
+    const items=this._recoveryUnresolved;
+    if(!items){toast('Primero pulsa "🩹 Recuperar fotos perdidas"');return;}
+    if(!items.length){toast('No queda nada pendiente de revisar a mano ✓');return;}
+    document.getElementById('sheetTitle').textContent='🔍 Revisar fotos a mano';
+    const body=document.getElementById('sheetBody');
+    body.innerHTML=`<div class="empty" style="text-align:left;padding:12px;margin-bottom:10px">Estos restaurantes tienen más fotos sueltas que platos sin foto (probablemente por copias duplicadas) — elige a mano cuál va con cada plato.</div>`+
+      `<div class="pastelist">${items.map((it,i)=>`<div class="listitem" data-i="${i}"><div class="t"><b>${esc(it.name)}</b><small>${it.missing.length} plato(s) sin foto · ${it.free.length} archivo(s) para elegir</small></div></div>`).join('')}</div>`;
+    body.querySelectorAll('.listitem').forEach(el=>el.onclick=()=>this.reviewPlace(+el.dataset.i));
+    document.getElementById('overlay').classList.add('show');
+  },
+  async reviewPlace(i){
+    const it=this._recoveryUnresolved[i];if(!it)return;
+    document.getElementById('sheetTitle').textContent='🔍 '+it.name;
+    const body=document.getElementById('sheetBody');
+    body.innerHTML=`<button class="pane-back" id="matchBack">‹ Volver a la lista</button>`+
+      `<div class="empty" style="text-align:left;padding:10px;margin:8px 0">Toca la foto correcta para cada plato (toca otra vez para quitarla). Si no la reconoces, déjalo sin elegir.</div>`+
+      `<div id="matchWrap"><div class="empty">Cargando fotos…</div></div>`+
+      `<button class="save" id="matchSave" style="margin-top:14px">Guardar asignación</button>`;
+    document.getElementById('matchBack').onclick=()=>this.openManualRecovery();
+    const wrap=document.getElementById('matchWrap');
+    const urls={},revoke=()=>{Object.values(urls).forEach(u=>{try{URL.revokeObjectURL(u);}catch(e){}});};
+    for(const f of it.free){
+      try{
+        const dl=await this.client.storage.from('media').download(this.user.id+'/'+it.id+'/'+f.name);
+        if(dl.data)urls[f.name]=URL.createObjectURL(dl.data);
+      }catch(e){}
+    }
+    const assign={};
+    const renderGroups=()=>{
+      wrap.innerHTML=it.missing.map((d,di)=>{
+        const thumbs=it.free.map(f=>{
+          const sel=assign[di]===f.name;
+          const usedElsewhere=Object.keys(assign).some(k=>assign[k]===f.name&&+k!==di);
+          const src=urls[f.name];
+          const inner=src?`<img src="${src}"/>`:`<div class="novid-mini">🎞️</div>`;
+          return `<button type="button" class="thumbopt${sel?' sel':''}${usedElsewhere?' used':''}" data-di="${di}" data-mid="${esc(f.name)}">${inner}</button>`;
+        }).join('');
+        return `<div class="dish-match"><h4>${esc(d.name||'Sin nombre')}</h4><div class="thumbs">${thumbs}</div></div>`;
+      }).join('');
+      wrap.querySelectorAll('.thumbopt').forEach(b=>b.onclick=()=>{
+        const di=+b.dataset.di,mid=b.dataset.mid;
+        assign[di]=(assign[di]===mid)?undefined:mid;
+        renderGroups();
+      });
+    };
+    renderGroups();
+    document.getElementById('matchSave').onclick=async()=>{
+      const picked=Object.values(assign).filter(Boolean);
+      if(new Set(picked).size!==picked.length){toast('Has puesto la misma foto en dos platos — revísalo');return;}
+      if(!picked.length){toast('No has elegido ninguna foto');return;}
+      it.missing.forEach((d,di)=>{if(assign[di]){const f=it.free.find(x=>x.name===assign[di]);d.mid=f.name;d.mtype=(f.metadata&&f.metadata.mimetype)||'';}});
+      const {error}=await this.client.from('places').upsert({user_id:this.user.id,place_id:it.rowPlaceId,dishes:it.payload,updated_at:new Date().toISOString()},{onConflict:'user_id,place_id'});
+      if(error){toast('Error al guardar: '+error.message);return;}
+      revoke();
+      toast('Guardado ✓ · '+picked.length+' foto(s) asignada(s)');
+      this._recoveryUnresolved.splice(i,1);
+      await this.pullAll(true);
+      this.openManualRecovery();
+    };
   },
 
   startPolling(){
@@ -1985,6 +2065,7 @@ const SYNC={
     document.getElementById('authSignOut').onclick=()=>this.signOut();
     document.getElementById('authSyncNow').onclick=()=>this.pullAll(false);
     document.getElementById('authRecover').onclick=()=>this.recoverOrphanedMedia();
+    document.getElementById('authManualMatch').onclick=()=>this.openManualRecovery();
     document.getElementById('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')this.signIn();});
     const ver=document.getElementById('authVer');if(ver)ver.textContent='Saboreo · '+this.BUILD;
   },
