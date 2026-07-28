@@ -245,6 +245,8 @@
   .scores .sc small{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-dim);font-weight:700}
   .scores .sc.global{border-color:var(--green)}
   .scores .sc.global b{color:var(--green-d)}
+  .scores .sc.price{border-color:var(--orange)}
+  .scores .sc.price b{color:var(--orange-d)}
 
   /* rating + course in dish form */
   .raterow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
@@ -948,13 +950,19 @@ function openPricesSheet(id){
            `<div class="pinput"><input type="number" inputmode="decimal" step="0.10" min="0" class="priceinp" data-key="${esc(g.key)}" placeholder="0,00" value="${val}"><span>€</span></div></div>`;
   }).join('');
   body.innerHTML=`<div class="pricelist">${rows}</div>`+
+    `<div class="pricerow"><div class="t">👥 Comensales</div><div class="pinput"><input type="number" inputmode="numeric" step="1" min="1" id="dinersInp" placeholder="1" value="${rec.diners||''}"></div></div>`+
     `<div class="stat"><span>Total</span><b id="priceTotalVal">0,00€</b></div>`+
+    `<div class="stat"><span>Precio por persona</span><b id="pricePerPersonVal">—</b></div>`+
     `<button class="save" id="pricesSave">Guardar precios</button>`;
   const updateTotal=()=>{
-    let s=0;document.querySelectorAll('.priceinp').forEach(inp=>{const v=parseFloat(inp.value.replace(',','.'));if(!isNaN(v))s+=v;});
+    let s=0,any=false;document.querySelectorAll('.priceinp').forEach(inp=>{const v=parseFloat(inp.value.replace(',','.'));if(!isNaN(v)){s+=v;any=true;}});
     document.getElementById('priceTotalVal').textContent=fmtEUR(s);
+    const d=parseInt(document.getElementById('dinersInp').value,10);
+    // solo se calcula el precio por persona si hay algo de precio puesto Y comensales; si no, no se muestra un "0"
+    document.getElementById('pricePerPersonVal').textContent=(any&&d>0)?fmtEUR(s/d):'—';
   };
   document.querySelectorAll('.priceinp').forEach(inp=>inp.oninput=updateTotal);
+  document.getElementById('dinersInp').oninput=updateTotal;
   updateTotal();
   document.getElementById('pricesSave').onclick=()=>savePrices(id,groups);
   document.getElementById('overlay').classList.add('show');
@@ -966,6 +974,8 @@ async function savePrices(id,groups){
     const raw=inp.value.trim().replace(',','.'),val=raw===''?null:parseFloat(raw);
     for(const d of g.dishes){if(val==null||isNaN(val))delete d.price;else d.price=val;}   // el mismo precio para todas las fotos de ese plato
   });
+  const dRaw=document.getElementById('dinersInp').value.trim(),dVal=dRaw===''?NaN:parseInt(dRaw,10);
+  if(isNaN(dVal)||dVal<1)delete rec.diners;else rec.diners=dVal;
   await DB.put(rec);saved.set(id,rec);
   closeOverlay();
   if(current===id)renderInfo(id);
@@ -1101,12 +1111,16 @@ function calcTotalPrice(id){
   return any?sum:null;
 }
 function fmtEUR(n){return n.toFixed(2).replace('.',',')+'€';}
+function getDiners(id){const rec=saved.get(id);return rec&&typeof rec.diners==='number'&&rec.diners>0?rec.diners:null;}
 function renderScores(id){
   const box=document.getElementById('pScores'),s=calcScores(id);
-  if(s.global==null){box.className='scores empty-sc';box.innerHTML='';return;}
+  const total=calcTotalPrice(id),diners=getDiners(id);
+  const perPerson=(total!=null&&diners)?total/diners:null;   // solo si hay precio puesto Y comensales; si no, no se muestra (nunca "0")
+  if(s.global==null&&perPerson==null){box.className='scores empty-sc';box.innerHTML='';return;}
   box.className='scores';
   const cell=(cls,val,lbl)=>val==null?'':`<div class="sc ${cls}"><b>${val.toFixed(1)}</b><small>${lbl}</small></div>`;
-  box.innerHTML=cell('global',s.global,'Global')+cell('',s.comida,'🍽️ Comida')+cell('',s.postre,'🍰 Postre');
+  const priceCell=perPerson!=null?`<div class="sc price"><b>${fmtEUR(perPerson)}</b><small>👤 Por persona</small></div>`:'';
+  box.innerHTML=cell('global',s.global,'Global')+cell('',s.comida,'🍽️ Comida')+cell('',s.postre,'🍰 Postre')+priceCell;
 }
 // las fotos/vídeos se guardan como ArrayBuffer (fiable al releer, sobre todo en iOS);
 // se reconstruye un Blob "fresco" cada vez que se van a mostrar
@@ -1561,7 +1575,7 @@ async function exportData(){
       const mb=dishBlob(d);if(mb)o.media=await blobToDataURL(mb);
       dishes.push(o);
     }
-    places.push({id:r.id,meta:r.meta,dishes});
+    places.push({id:r.id,meta:r.meta,diners:r.diners,dishes});
   }
   const data={app:'saboreo',version:1,exported:Date.now(),favorites:[...favorites],visited:[...visited],ckeys:ckeyOverrides,places};
   const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
@@ -1583,6 +1597,7 @@ async function importData(file){
         dishes.push(dish);
       }
       const rec={id:pl.id,meta:pl.meta,dishes};
+      if(typeof pl.diners==='number')rec.diners=pl.diners;
       await DB.put(rec);saved.set(pl.id,rec);
       if(pl.meta&&!known.has(pl.id)){const p={...pl.meta,ckey:pl.meta.ckey||cuisineKey(pl.meta.cat)};known.set(pl.id,p);PLACES.push(p);}
     }
@@ -1762,7 +1777,7 @@ const SYNC={
     }
     this.saveUploaded(up);
     const now=new Date().toISOString();
-    const {error}=await this.client.from('places').upsert({user_id:this.user.id,place_id:String(id),dishes:{meta:rec.meta||known.get(id)||null,dishes},updated_at:now},{onConflict:'user_id,place_id'});
+    const {error}=await this.client.from('places').upsert({user_id:this.user.id,place_id:String(id),dishes:{meta:rec.meta||known.get(id)||null,dishes,diners:rec.diners},updated_at:now},{onConflict:'user_id,place_id'});
     if(error)throw new Error('place push: '+error.message);
     const m=this.placeMts();m[id]=now;this.savePlaceMts(m);this.clearPlaceDirty(id);
   },
@@ -1834,6 +1849,7 @@ const SYNC={
     const payload=row.dishes||{};
     const cloudDishes=Array.isArray(payload)?payload:(payload.dishes||[]);
     const meta=Array.isArray(payload)?null:payload.meta;
+    const diners=Array.isArray(payload)?null:payload.diners;
     const m=this.placeMts(),localMts=m[id],localRec=saved.get(id);
     const cloudNewer=!localMts||(row.updated_at>localMts);
     if(localRec&&!first&&!cloudNewer)return;
@@ -1850,6 +1866,7 @@ const SYNC={
     }
     this.saveUploaded(up);
     const rec={id,meta:meta||(localRec&&localRec.meta)||known.get(id)||null,dishes};
+    if(typeof diners==='number')rec.diners=diners;else if(localRec&&typeof localRec.diners==='number')rec.diners=localRec.diners;
     // si falla el guardado local (bug de iOS con IndexedDB), seguimos igualmente: el restaurante
     // ya está en memoria y se ve en el mapa; se guardará en el dispositivo la próxima vez que funcione.
     this._silent=true;try{await DB.put(rec);}catch(e){console.warn('[sync] guardado local falló, sigo con el resto',e);}this._silent=false;
