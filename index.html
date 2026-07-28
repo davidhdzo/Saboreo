@@ -599,7 +599,10 @@ function cuisineEmoji(key){const c=CUISINES.find(c=>c.key===key);return c?c.em:'
 /* IndexedDB */
 // bug conocido de Safari/iOS: "connection to Indexed Database server lost" -> la conexión se pierde y solo se recupera recargando
 function idbLost(e){return /indexed database server lost|database server lost|lost.*refresh|backing store|connection to indexed/i.test(String(e&&e.message||e));}
+let _idbRecovering=false;   // evita avisar/reintentar una y otra vez si varias operaciones fallan casi a la vez
 function recoverIDB(){
+  if(_idbRecovering)return;
+  _idbRecovering=true;
   if(sessionStorage.getItem('idb_reloaded')){                // ya recargamos una vez y sigue fallando -> NO entrar en bucle
     try{toast('iOS ha perdido la base de datos. Cierra la app del todo (deslízala fuera del multitarea) y ábrela otra vez.');}catch(_){}
     return;
@@ -1748,7 +1751,9 @@ const SYNC={
     }
     this.saveUploaded(up);
     const rec={id,meta:meta||(localRec&&localRec.meta)||known.get(id)||null,dishes};
-    this._silent=true;await DB.put(rec);this._silent=false;
+    // si falla el guardado local (bug de iOS con IndexedDB), seguimos igualmente: el restaurante
+    // ya está en memoria y se ve en el mapa; se guardará en el dispositivo la próxima vez que funcione.
+    this._silent=true;try{await DB.put(rec);}catch(e){console.warn('[sync] guardado local falló, sigo con el resto',e);}this._silent=false;
     saved.set(id,rec);
     if(rec.meta&&!known.has(id)){const p={...rec.meta,ckey:rec.meta.ckey||cuisineKey(rec.meta.cat)};known.set(id,p);PLACES.push(p);}
     m[id]=row.updated_at;this.savePlaceMts(m);
@@ -1772,7 +1777,7 @@ const SYNC={
     this.saveUploaded(up);
     for(const id of touched){
       const rec=saved.get(id);if(!rec)continue;
-      this._silent=true;await DB.put(rec);this._silent=false;
+      this._silent=true;try{await DB.put(rec);}catch(e){console.warn('[sync] guardado local falló, sigo con el resto',e);}this._silent=false;
       if(current===id)renderInfo(id);
     }
     let extra=this._mediaErr?' · aviso fotos: '+this._mediaErr:'';
