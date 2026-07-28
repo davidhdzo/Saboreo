@@ -1448,6 +1448,15 @@ function renderViewer(start){
     reel.querySelectorAll('.reel-goto').forEach(b=>b.onclick=()=>{const it=dishFeed[+b.dataset.idx];closeViewer();closeOverlay();if(it&&it.p){map.setView([it.p.lat,it.p.lng],17);openPanel(it.p.id);}});
   }
 }
+// refresca el visor a pantalla completa si en ese momento está mostrando ESTE restaurante,
+// conservando el plato en el que estabas (para no dar un salto al llegar una foto nueva)
+function refreshViewerIfShowing(id){
+  if(viewerMode!=='rest'||viewerRestId!==id)return;
+  const v=document.getElementById('viewer');if(!v||!v.classList.contains('show'))return;
+  const reel=document.getElementById('viewerReel');
+  const idx=reel?Math.round(reel.scrollTop/Math.max(1,reel.clientHeight)):0;
+  renderViewer(idx);
+}
 async function viewerDelete(i){
   await deleteDish(viewerRestId,i);
   const rec=saved.get(viewerRestId);
@@ -1894,7 +1903,8 @@ const SYNC={
     for(const id of touched){
       const rec=saved.get(id);if(!rec)continue;
       this._silent=true;try{await DB.put(rec);}catch(e){console.warn('[sync] guardado local falló, sigo con el resto',e);}this._silent=false;
-      if(current===id)renderInfo(id);
+      if(current===id){renderInfo(id);renderDishes(id);}
+      refreshViewerIfShowing(id);   // si tienes ese restaurante abierto a pantalla completa, la foto aparece sola
     }
     let extra=this._mediaErr?' · aviso fotos: '+this._mediaErr:'';
     this.setState('Al día ✓'+extra);
