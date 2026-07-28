@@ -1723,7 +1723,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v25 · 28-jul (recuperar fotos huérfanas)',
+  BUILD:'v26 · 28-jul (recuperación: mostrar por qué falla cada sitio)',
   client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -1947,15 +1947,16 @@ const SYNC={
         const missing=dishes.filter(d=>!d.mid).sort((a,b)=>(a.ts||0)-(b.ts||0));
         if(!missing.length)continue;
         const id=this.coerceId(row.place_id);
+        const name0=(payload.meta&&payload.meta.name)||String(id);
         const {data:files,error:lerr}=await this.client.storage.from('media').list(this.user.id+'/'+id,{limit:200,sortBy:{column:'created_at',order:'asc'}});
-        if(lerr||!files)continue;
+        if(lerr){unclear.push(`${name0} (no se pudo listar Storage: ${lerr.message||lerr})`);continue;}
+        if(!files||!files.length){unclear.push(`${name0} (0 archivos en su carpeta de Storage)`);continue;}
         const free=files.filter(f=>f.name&&!usedMids.has(f.name));   // archivos que ningún plato reclama ya
-        if(!free.length)continue;
-        const name=(payload.meta&&payload.meta.name)||String(id);
-        if(free.length!==missing.length){unclear.push(`${name} (${missing.length} plato(s) sin foto, ${free.length} archivo(s) sueltos)`);continue;}
+        if(!free.length){unclear.push(`${name0} (${files.length} archivo(s) en Storage, pero ya reclamados todos)`);continue;}
+        if(free.length!==missing.length){unclear.push(`${name0} (${missing.length} plato(s) sin foto, ${free.length} archivo(s) sueltos)`);continue;}
         missing.forEach((d,i)=>{d.mid=free[i].name;d.mtype=(free[i].metadata&&free[i].metadata.mimetype)||'';});
         const {error:uerr}=await this.client.from('places').upsert({user_id:this.user.id,place_id:row.place_id,dishes:payload,updated_at:new Date().toISOString()},{onConflict:'user_id,place_id'});
-        if(uerr){unclear.push(`${name} (fallo al guardar: ${uerr.message})`);continue;}
+        if(uerr){unclear.push(`${name0} (fallo al guardar: ${uerr.message})`);continue;}
         placesFixed++;dishesFixed+=missing.length;
       }
     }catch(e){this.setState('Error recuperando: '+((e&&e.message)||e));toast('Error recuperando fotos: '+((e&&e.message)||e));return;}
