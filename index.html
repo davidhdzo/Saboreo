@@ -618,17 +618,14 @@ function cuisineKey(raw){const s=(raw||'').toLowerCase();for(const c of CUISINES
 function cuisineEmoji(key){const c=CUISINES.find(c=>c.key===key);return c?c.em:'🍴';}
 
 /* IndexedDB */
-// bug conocido de Safari/iOS: "connection to Indexed Database server lost" -> la conexión se pierde y solo se recupera recargando
+// bug conocido de Safari/iOS: "connection to Indexed Database server lost" -> la conexión se pierde.
+// ANTES esto forzaba un location.reload() de toda la página, y como el freno se reiniciaba en
+// cuanto UNA operación iba bien, en cuanto fallaba la siguiente volvía a recargar -> bucle de
+// recargas que hacía parecer que la app se quedaba "reconectando" minutos enteros y que los
+// restaurantes desaparecían. Ahora NUNCA se recarga la página: solo se reabre la conexión IDB
+// (ya lo hace _tx más abajo) y se reintenta en silencio; si sigue fallando, se sigue funcionando
+// con lo que haya en memoria y se reintentará en el siguiente guardado.
 function idbLost(e){return /indexed database server lost|database server lost|lost.*refresh|backing store|connection to indexed/i.test(String(e&&e.message||e));}
-let _idbRecovering=false;   // evita avisar/reintentar una y otra vez si varias operaciones fallan casi a la vez
-function recoverIDB(){
-  if(_idbRecovering)return;
-  _idbRecovering=true;
-  if(sessionStorage.getItem('idb_reloaded')){return;}
-  sessionStorage.setItem('idb_reloaded','1');
-  console.warn('[idb] Reconectando…');
-  setTimeout(()=>location.reload(),1500);
-}
 const DB={db:null,_opening:null,
   open(){return this._opening||(this._opening=new Promise((res,rej)=>{const r=indexedDB.open('saboreo',1);
     r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('places'))d.createObjectStore('places',{keyPath:'id'});};
@@ -639,10 +636,12 @@ const DB={db:null,_opening:null,
       res(conn);};
     r.onerror=()=>{this._opening=null;rej(r.error||new Error('IDB open error'));};}));},
   async ready(){return this.db||await this.open();},
-  // ejecuta una transacción; si la conexión está cerrada, reabre y reintenta (con pausas para que iOS se asiente)
+  // ejecuta una transacción; si la conexión está cerrada/perdida, se reabre y reintenta varias
+  // veces (con pausas). Nunca recarga la página: si tras los reintentos sigue sin ir, se rinde
+  // en silencio y la operación se reintentará más adelante (p.ej. en el siguiente guardado).
   async _tx(mode,work){
     let lastErr;
-    for(let i=0;i<3;i++){
+    for(let i=0;i<5;i++){
       try{
         const db=await this.ready();
         const out=await new Promise((res,rej)=>{
@@ -650,12 +649,11 @@ const DB={db:null,_opening:null,
           work(t.objectStore('places'),t,res,rej);
           t.onabort=()=>rej(t.error||new Error('tx abort'));
         });
-        sessionStorage.removeItem('idb_reloaded');            // fue bien: reiniciamos el freno de recargas
         return out;
       }catch(e){lastErr=e;this.db=null;this._opening=null;
-        if(idbLost(e)){recoverIDB();throw e;}                 // conexión con IndexedDB perdida (bug de iOS): solo se arregla recargando
-        if(i<2)await new Promise(r=>setTimeout(r,100));}
+        if(i<4)await new Promise(r=>setTimeout(r,150*(i+1)));}
     }
+    console.warn('[idb] no se pudo completar tras varios intentos, sigo sin recargar la página',lastErr);
     throw lastErr;
   },
   put(o){return this._tx('readwrite',(store,t,res,rej)=>{store.put(o);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});},
@@ -1716,6 +1714,7 @@ async function boot(){
       await DB.open();
       const stored=await DB.all();
       stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
+      refreshVisible();   // pinta ya tus propios sitios guardados (con fotos) sin esperar a la nube
     }catch(e){console.warn('[boot] BD local error',e);}
     SYNC.init();
   },100);
@@ -1731,7 +1730,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v27 · 28-jul (revisar y asignar fotos a mano)',
+  BUILD:'v28 · 06-ago (sin recargas automáticas)',
   client:null,user:null,_silent:true,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',_bootDone:false,
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
