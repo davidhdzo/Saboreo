@@ -1,7 +1,7 @@
 {
-  "name": "Saboreo · Madrid",
+  "name": "Saboreo · España",
   "short_name": "Saboreo",
-  "description": "Tu mapa personal de restaurantes de Madrid.",
+  "description": "Tu mapa personal de restaurantes en España.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

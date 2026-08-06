@@ -1,5 +1,5 @@
-SABOREO · Madrid — versión 1 (prototipo funcional)
-==================================================
+SABOREO · España — tu mapa de restaurantes
+============================================
 
 CÓMO ABRIRLA
 ------------
@@ -9,16 +9,16 @@ Doble clic en "index.html". Se abre en tu navegador. No hay que instalar nada.
 ARCHIVOS
 --------
 - index.html  -> la app
-- data.js     -> los 6.063 restaurantes de Madrid (descargados de OpenStreetMap)
+- data.js     -> restaurantes de España (Madrid, Alicante, Elche, Valencia, Bilbao, Barcelona, Gijón)
 - LEEME.txt   -> esto
 
 IMPORTANTE: index.html y data.js deben estar SIEMPRE en la misma carpeta.
 
 QUÉ HACE
 --------
-- Mapa claro (fondo blanco) de Madrid.
-- Muestra ~6.000 restaurantes de Madrid al instante (sin depender de internet).
-- Colores de Saboreo: naranja (puntos) y verde (tus sitios guardados).
+- Mapa de España con restaurantes en varias ciudades.
+- Empieza con vista general de España (acércate para ver más).
+- Colores de Saboreo: naranja (restaurantes) y verde (tus sitios guardados).
 - Buscador arriba a la derecha.
 - Clic en un punto -> panel lateral -> añade platos con foto/vídeo y descripción.
 - Botón "Añadir sitio" (abajo derecha) = modo híbrido: clic en el mapa para
@@ -28,10 +28,15 @@ DÓNDE SE GUARDAN TUS FOTOS Y NOTAS
 ----------------------------------
 En tu navegador (IndexedDB), privado y solo tuyo, en este ordenador.
 Si borras los datos del navegador, se pierden.
+También puedes sincronizar en la nube con ☁️ Cuenta y sincronía (entra con email).
+
+CIUDADES DISPONIBLES
+--------------------
+Madrid, Alicante, Elche, Valencia, Bilbao, Barcelona, Gijón
 
 LÍMITES DE ESTA VERSIÓN
 -----------------------
-- Datos locales: no se sincronizan con el móvil ni hay nube (todavía).
-- Cobertura OpenStreetMap ~80-85%; por eso existe el modo híbrido.
+- Datos iniciales limitados; tú puedes añadir más restaurantes.
+- Cobertura depende de lo que tengas guardado; el modo híbrido permite añadir los que faltan.
 
 Datos de mapa: © OpenStreetMap · © CARTO

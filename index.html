@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Saboreo · Madrid</title>
+<title>Saboreo · España</title>
 <!-- PWA -->
 <link rel="manifest" href="./manifest.json" />
 <meta name="theme-color" content="#ff7a1a" />
@@ -402,7 +402,7 @@
 <div class="topbar">
   <div class="brand">
     <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v7a3 3 0 0 0 6 0V3M6 3v18M18 3c-2 0-3 2-3 5s1 4 3 4 3-1 3-4-1-5-3-5zM18 12v9"/></svg></div>
-    <div><h1>Sabor<span>eo</span></h1><small>MADRID</small></div>
+    <div><h1>Sabor<span>eo</span></h1><small>ESPAÑA</small></div>
   </div>
   <div class="search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
@@ -459,7 +459,7 @@
     <button class="favstar" id="favStar" title="Quiero ir aquí">☆</button>
     <div class="cat" id="pCat">RESTAURANTE</div>
     <h2 id="pName">—</h2>
-    <div class="addr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span id="pAddr">Madrid</span></div>
+    <div class="addr"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span id="pAddr">España</span></div>
     <div class="scores empty-sc" id="pScores"></div>
   </div>
   <div class="panel-body">
@@ -579,10 +579,11 @@
 <script src="./supabase.js"></script>
 <script>
 /* ============================================================
-   Saboreo · Madrid — prototipo funcional
+   Saboreo · España — mapa de restaurantes
    ============================================================ */
-const MADRID=[40.4168,-3.7038];
-const MIN_ZOOM=15;    // por debajo: no se muestran puntos
+const MADRID=[40.4168,-3.7038];  // coordenadas por defecto para búsqueda
+const SPAIN=[40.0,-3.5];          // centro aproximado de España
+const MIN_ZOOM=6;     // mostrar toda España
 const LABEL_ZOOM=18;  // desde aquí: aparecen los nombres solos (solo muy cerca)
 const MAX_MARKERS=140;// máx puntos a la vez (fluidez)
 const MAX_LABELS=32;  // máx nombres a la vez (no saturar)
@@ -689,7 +690,7 @@ function norm(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/
 
 /* map */
 function initMap(){
-  map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:6,maxZoom:21,preferCanvas:true}).setView([40.4155,-3.7025],15);
+  map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:6,maxZoom:21,preferCanvas:true}).setView(SPAIN,7);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap · © CARTO',subdomains:'abcd',maxZoom:21,maxNativeZoom:19,keepBuffer:8,updateWhenIdle:true,updateWhenZooming:false}).addTo(map);
   markerLayer=L.layerGroup().addTo(map);
   map.on('click',onMapClick);
@@ -858,7 +859,7 @@ function refreshVisible(){
 /* data */
 function buildPlaces(){
   (window.SABOREO_DATA||[]).forEach(d=>{
-    const p={id:d.i,name:d.n,cat:d.c||'restaurante',addr:d.a||'Madrid',lat:d.y,lng:d.x,custom:false,ckey:cuisineKey(d.c)};
+    const p={id:d.i,name:d.n,cat:d.c||'restaurante',addr:d.a||'España',lat:d.y,lng:d.x,custom:false,ckey:cuisineKey(d.c)};
     known.set(p.id,p);PLACES.push(p);
   });
 }
