@@ -1708,17 +1708,18 @@ async function boot(){
   // pide al sistema que no borre los datos guardados (favoritos, "he ido", fotos) bajo presión de espacio
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
   initMap();wire();buildCuisineChips();buildPlaces();
+  const l=document.getElementById('loader');
+  applyCkeyOverrides();
+  refreshVisible();
+  document.getElementById('loaderTxt').textContent=`${PLACES.length.toLocaleString('es')} restaurantes listos`;
+  l.classList.add('hide');
   // si la base de datos local falla (bug de iOS), arrancamos igualmente: la nube repondrá tus datos
   try{
     await DB.open();
     const stored=await DB.all();
     stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
+    refreshVisible();
   }catch(e){console.warn('[boot] base de datos local no disponible ahora',e);}
-  applyCkeyOverrides();
-  refreshVisible();
-  const l=document.getElementById('loader');
-  document.getElementById('loaderTxt').textContent=`${PLACES.length.toLocaleString('es')} restaurantes listos`;
-  setTimeout(()=>l.classList.add('hide'),700);
   SYNC.init();
 }
 
@@ -1827,7 +1828,7 @@ const SYNC={
      al instante. Las fotos/vídeos, que son lo lento, se descargan aparte en segundo plano
      (hydrateMedia) sin retrasar la apertura de la app. */
   async pullAll(silent){
-    if(!this.user)return;this.setState('Sincronizando…');this._skip=0;this._mediaErr=null;
+    if(!this.user||!navigator.onLine)return;this.setState('Sincronizando…');this._skip=0;this._mediaErr=null;
     try{
       const first=!localStorage.getItem(this.k('synced'));
       const pr=await this.client.from('prefs').select('*').eq('user_id',this.user.id).maybeSingle();
@@ -1842,9 +1843,10 @@ const SYNC={
       this.hydrateMedia(mediaQueue);   // fotos/vídeos: siguen bajando solas, sin bloquear lo anterior
       if(first)this.pushAllLocal().then(()=>localStorage.setItem(this.k('synced'),'1')).catch(e=>console.warn('[sync] subida inicial',e));
       this.flushDirty();   // sube lo que quedara pendiente
+      clearTimeout(this._retry);
     }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);this._lastErr=msg;
       const net=/fetch|network|timeout|load failed|ECONN|Failed to send|NetworkError|closing|IDBDatabase|indexeddb|indexed database|server lost|database connection/i.test(msg)||!navigator.onLine;
-      if(net){this.setState('Sin conexión · se reintentará solo');if(!silent)toast('Sin conexión · se reintentará solo');clearTimeout(this._retry);this._retry=setTimeout(()=>{if(this.user&&navigator.onLine)this.pullAll(true);},12000);}
+      if(net){this.setState('Sin conexión · esperando…');if(!silent)toast('Sin conexión · se reintentará automáticamente');clearTimeout(this._retry);this._retry=setTimeout(()=>{if(this.user&&navigator.onLine)this.pullAll(true);},30000);}
       else{this.setState('Error: '+msg);if(!silent)toast('Sync: '+msg);}
     }
   },
@@ -1925,7 +1927,7 @@ const SYNC={
     for(const id of touched){
       const rec=saved.get(id);if(!rec)continue;
       this._silent=true;try{await DB.put(rec);}catch(e){console.warn('[sync] guardado local falló, sigo con el resto',e);}this._silent=false;
-      if(current===id){renderInfo(id);renderDishes(id);}
+      if(current===id){renderDishes(id);}
       refreshViewerIfShowing(id);   // si tienes ese restaurante abierto a pantalla completa, la foto aparece sola
     }
     let extra=this._mediaErr?' · aviso fotos: '+this._mediaErr:'';
@@ -2049,10 +2051,10 @@ const SYNC={
 
   startPolling(){
     clearInterval(this._poll);
-    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}},45000);
+    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine){this.flushDirty();this.pullAll(true);}},60000);
     if(!this._visWired){this._visWired=true;
-      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user)setTimeout(()=>{if(document.visibilityState==='visible'&&this.user){this.flushDirty();this.pullAll(true);}},1200);});
-      window.addEventListener('online',()=>{if(this.user){this.flushDirty();this.pullAll(true);}});
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine)setTimeout(()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine){this.flushDirty();this.pullAll(true);}},2000);});
+      window.addEventListener('online',()=>{if(this.user&&navigator.onLine)setTimeout(()=>this.pullAll(true),500);},'once');
     }
   },
 
