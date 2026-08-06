@@ -420,7 +420,7 @@
   <button data-act="settings"><span>⚙️</span> Ajustes</button>
 </div>
 
-<div class="loader" id="loader"><div class="spin"></div><span id="loaderTxt">Cargando restaurantes…</span></div>
+<div class="loader hide" id="loader"><div class="spin"></div><span id="loaderTxt">Cargando restaurantes…</span></div>
 <div class="hint" id="zoomHint">🔍 Acércate a una zona para ver los restaurantes</div>
 <div class="modebar" id="modebar">📍 Haz clic en el mapa para añadir un restaurante nuevo</div>
 <div class="toast" id="toast"></div>
@@ -624,13 +624,10 @@ let _idbRecovering=false;   // evita avisar/reintentar una y otra vez si varias 
 function recoverIDB(){
   if(_idbRecovering)return;
   _idbRecovering=true;
-  if(sessionStorage.getItem('idb_reloaded')){                // ya recargamos una vez y sigue fallando -> NO entrar en bucle
-    try{toast('iOS ha perdido la base de datos. Cierra la app del todo (deslízala fuera del multitarea) y ábrela otra vez.');}catch(_){}
-    return;
-  }
+  if(sessionStorage.getItem('idb_reloaded')){return;}
   sessionStorage.setItem('idb_reloaded','1');
-  try{toast('Reconectando la base de datos…');}catch(_){}
-  setTimeout(()=>location.reload(),1200);
+  console.warn('[idb] Reconectando…');
+  setTimeout(()=>location.reload(),1500);
 }
 const DB={db:null,_opening:null,
   open(){return this._opening||(this._opening=new Promise((res,rej)=>{const r=indexedDB.open('saboreo',1);
@@ -657,7 +654,7 @@ const DB={db:null,_opening:null,
         return out;
       }catch(e){lastErr=e;this.db=null;this._opening=null;
         if(idbLost(e)){recoverIDB();throw e;}                 // conexión con IndexedDB perdida (bug de iOS): solo se arregla recargando
-        if(i<2)await new Promise(r=>setTimeout(r,250));}
+        if(i<2)await new Promise(r=>setTimeout(r,100));}
     }
     throw lastErr;
   },
@@ -1712,16 +1709,16 @@ async function boot(){
   const l=document.getElementById('loader');
   applyCkeyOverrides();
   refreshVisible();
-  document.getElementById('loaderTxt').textContent=`${PLACES.length.toLocaleString('es')} restaurantes listos`;
   l.classList.add('hide');
-  // si la base de datos local falla (bug de iOS), arrancamos igualmente: la nube repondrá tus datos
-  try{
-    await DB.open();
-    const stored=await DB.all();
-    stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
-    refreshVisible();
-  }catch(e){console.warn('[boot] base de datos local no disponible ahora',e);}
-  SYNC.init();
+  // Cargar BD local y sincronizar en background, sin interferir con la UI
+  setTimeout(async()=>{
+    try{
+      await DB.open();
+      const stored=await DB.all();
+      stored.forEach(r=>{saved.set(r.id,r);if(r.meta&&!known.has(r.id)){const p={...r.meta,ckey:r.meta.ckey||cuisineKey(r.meta.cat)};known.set(r.id,p);PLACES.push(p);}});
+    }catch(e){console.warn('[boot] BD local error',e);}
+    SYNC.init();
+  },100);
 }
 
 /* ============================================================
@@ -1735,7 +1732,7 @@ const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
   BUILD:'v27 · 28-jul (revisar y asignar fotos a mano)',
-  client:null,user:null,_silent:false,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',
+  client:null,user:null,_silent:true,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',_bootDone:false,
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
   placeMts(){try{return JSON.parse(localStorage.getItem(this.k('pmts'))||'{}');}catch(e){return {};}},
@@ -1751,13 +1748,13 @@ const SYNC={
   clearPlaceDirty(id){const s=this.dirtySet();if(s.delete(String(id)))this.saveDirtySet(s);},
 
   async init(){
-    if(typeof supabase==='undefined'){console.warn('[sync] librería no cargada');return;}
-    try{this.client=supabase.createClient(this.URL,this.KEY);}catch(e){console.warn('[sync]',e);return;}
+    if(typeof supabase==='undefined'){console.warn('[sync] librería no cargada');this._bootDone=true;return;}
+    try{this.client=supabase.createClient(this.URL,this.KEY);}catch(e){console.warn('[sync]',e);this._bootDone=true;return;}
     this.wire();
     let session=null;
     try{session=(await this.client.auth.getSession()).data.session;}catch(e){}
-    if(session&&session.user){this.user=session.user;this.updateAuthUI();this.startPolling();this.pullAll(true);}
-    else{this.updateAuthUI();if(!localStorage.getItem('sb_prompted')){localStorage.setItem('sb_prompted','1');setTimeout(()=>this.openAuth(),1000);}}
+    if(session&&session.user){this.user=session.user;this.updateAuthUI();this.startPolling();this._bootDone=true;this.pullAll(true);}
+    else{this.updateAuthUI();this._bootDone=true;if(!localStorage.getItem('sb_prompted')){localStorage.setItem('sb_prompted','1');setTimeout(()=>this.openAuth(),3000);}}
     this.client.auth.onAuthStateChange((ev,sess)=>{this.user=sess&&sess.user?sess.user:null;this.updateAuthUI();});
   },
 
@@ -1829,7 +1826,7 @@ const SYNC={
      al instante. Las fotos/vídeos, que son lo lento, se descargan aparte en segundo plano
      (hydrateMedia) sin retrasar la apertura de la app. */
   async pullAll(silent){
-    if(!this.user||!navigator.onLine)return;this.setState('Sincronizando…');this._skip=0;this._mediaErr=null;
+    if(!this.user||!navigator.onLine)return;if(!this._bootDone)return;this.setState('Sincronizando…');this._skip=0;this._mediaErr=null;
     try{
       const first=!localStorage.getItem(this.k('synced'));
       const pr=await this.client.from('prefs').select('*').eq('user_id',this.user.id).maybeSingle();
@@ -1839,16 +1836,16 @@ const SYNC={
       if(rs.error)throw new Error('places: '+rs.error.message);
       const mediaQueue=[];
       if(rs.data)for(const row of rs.data)await this.mergePlace(row,first,mediaQueue);
-      applyCkeyOverrides();refreshVisible();if(current)updateFavStar(current);
-      this.setState('Al día ✓');if(!silent)toast('Sincronizado ✓');
+      applyCkeyOverrides();if(current)updateFavStar(current);if(this._bootDone)refreshVisible();
+      this.setState('Al día ✓');
       this.hydrateMedia(mediaQueue);   // fotos/vídeos: siguen bajando solas, sin bloquear lo anterior
       if(first)this.pushAllLocal().then(()=>localStorage.setItem(this.k('synced'),'1')).catch(e=>console.warn('[sync] subida inicial',e));
       this.flushDirty();   // sube lo que quedara pendiente
       clearTimeout(this._retry);
     }catch(e){const msg=(e&&e.message)||String(e);console.warn('[sync]',e);this._lastErr=msg;
       const net=/fetch|network|timeout|load failed|ECONN|Failed to send|NetworkError|closing|IDBDatabase|indexeddb|indexed database|server lost|database connection/i.test(msg)||!navigator.onLine;
-      if(net){this.setState('Sin conexión · esperando…');if(!silent)toast('Sin conexión · se reintentará automáticamente');clearTimeout(this._retry);this._retry=setTimeout(()=>{if(this.user&&navigator.onLine)this.pullAll(true);},30000);}
-      else{this.setState('Error: '+msg);if(!silent)toast('Sync: '+msg);}
+      if(net){this.setState('Sin conexión');clearTimeout(this._retry);this._retry=setTimeout(()=>{if(this.user&&navigator.onLine)this.pullAll(true);},30000);}
+      else{this.setState('Error: '+msg);}
     }
   },
   mergePrefs(pref,first){
@@ -2052,10 +2049,10 @@ const SYNC={
 
   startPolling(){
     clearInterval(this._poll);
-    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine){this.flushDirty();this.pullAll(true);}},60000);
+    this._poll=setInterval(()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine&&this._bootDone){this.flushDirty();this.pullAll(true);}},60000);
     if(!this._visWired){this._visWired=true;
-      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine)setTimeout(()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine){this.flushDirty();this.pullAll(true);}},2000);});
-      window.addEventListener('online',()=>{if(this.user&&navigator.onLine)setTimeout(()=>this.pullAll(true),500);},'once');
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine&&this._bootDone)setTimeout(()=>{if(document.visibilityState==='visible'&&this.user&&navigator.onLine){this.flushDirty();this.pullAll(true);}},3000);});
+      window.addEventListener('online',()=>{if(this.user&&navigator.onLine&&this._bootDone)setTimeout(()=>this.pullAll(true),1000);},'once');
     }
   },
 
