@@ -1229,10 +1229,12 @@ function editDish(id,i){
   updateSaveBtn();showPane('add');
 }
 async function saveDish(){
-  if(!current)return;const name=document.getElementById('dName').value.trim();if(!name)return;
+  if(!current){toast('Abre un restaurante primero');return;}
+  const name=document.getElementById('dName').value.trim();if(!name)return;
   const desc=document.getElementById('dDesc').value.trim();
   const rating=parseFloat(document.getElementById('dRate').value);
-  let rec=await DB.get(current);if(!rec)rec={id:current,meta:known.get(current),dishes:[]};
+  // fuente de la verdad en memoria: NO dependemos de leer la BD local (en iOS puede fallar)
+  let rec=saved.get(current)||{id:current,meta:known.get(current),dishes:[]};
   const wasEdit=editIndex!=null&&rec.dishes[editIndex];
   if(wasEdit){
     const d=rec.dishes[editIndex];
@@ -1244,10 +1246,20 @@ async function saveDish(){
     const dish={name,desc,course:pendingCourse,rating,fit:pendingFit,ts:Date.now()};if(pendingMedia){dish.buf=pendingMedia.buf;dish.mtype=pendingMedia.type;dish.mid=_mid();}
     rec.dishes.push(dish);
   }
-  await DB.put(rec);saved.set(current,rec);
-  renderDishes(current);refreshVisible();clearForm();showPane('dishes');toast(wasEdit?'Plato actualizado ✓':'Plato guardado ✓');
+  // 1) en memoria y en pantalla YA: el plato aparece al instante, aunque la BD local del móvil falle
+  saved.set(current,rec);
+  renderDishes(current);refreshVisible();clearForm();showPane('dishes');
+  // 2) persistir en la BD local; si falla (bug conocido de IndexedDB en iOS) el plato NO se pierde:
+  //    sigue en memoria y forzamos igualmente su subida a la nube.
+  try{
+    await DB.put(rec);
+  }catch(e){
+    console.warn('[saveDish] la BD local falló, sigo en memoria y subo a la nube',e);
+    SYNC.schedulePlace(current);
+  }
+  toast(wasEdit?'Plato actualizado ✓':'Plato guardado ✓');
 }
-async function deleteDish(id,i){const rec=saved.get(id);if(!rec)return;rec.dishes.splice(i,1);await DB.put(rec);renderDishes(id);refreshVisible();toast('Plato eliminado');}
+async function deleteDish(id,i){const rec=saved.get(id);if(!rec)return;rec.dishes.splice(i,1);saved.set(id,rec);renderDishes(id);refreshVisible();try{await DB.put(rec);}catch(e){console.warn('[deleteDish] BD local falló, sigo en memoria y subo a la nube',e);SYNC.schedulePlace(id);}toast('Plato eliminado');}
 
 /* add place */
 function toggleAddMode(){addMode=!addMode;document.getElementById('dAdd').classList.toggle('active',addMode);document.getElementById('modebar').classList.toggle('show',addMode);document.getElementById('map').style.cursor=addMode?'crosshair':'';}
@@ -1730,7 +1742,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v28 · 06-ago (sin recargas automáticas)',
+  BUILD:'v29 · 07-ago (guardar platos a prueba de fallos)',
   client:null,user:null,_silent:true,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',_bootDone:false,
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
