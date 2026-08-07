@@ -587,16 +587,17 @@ const MIN_ZOOM=6;     // mostrar toda España
 const LABEL_ZOOM=18;  // desde aquí: aparecen los nombres solos (solo muy cerca)
 const MAX_MARKERS=140;// máx puntos a la vez (fluidez)
 const MAX_LABELS=32;  // máx nombres a la vez (no saturar)
-const POI_MIN_ZOOM=14;// con menos zoom SOLO se ven los sitios a los que has ido; el resto aparece al acercarte
+const POI_MIN_ZOOM=13;// con menos zoom SOLO se ven los sitios a los que has ido; el resto aparece al acercarte
 // tamaño (px) de la celda de la rejilla de pines según el zoom:
 // menos zoom => celdas grandes => pocos puntos; más zoom => celdas pequeñas => van apareciendo el resto poco a poco
 function pinCellPx(z){
-  if(z>=19)return 48;
-  if(z>=18)return 62;
-  if(z>=17)return 80;
-  if(z>=16)return 104;
-  if(z>=15)return 134;
-  return 180;          // z==14
+  if(z>=19)return 34;
+  if(z>=18)return 44;
+  if(z>=17)return 56;
+  if(z>=16)return 72;
+  if(z>=15)return 92;
+  if(z>=14)return 118;
+  return 150;          // z==13
 }
 
 const CUISINES=[
@@ -875,7 +876,7 @@ function refreshVisible(){
   if(showRest){
     let shown=0;
     for(const p of vis){
-      if(shown>=260)break;
+      if(shown>=700)break;
       if(p.id===highlightId||isVisited(p.id))continue;
       const pt=map.latLngToContainerPoint([p.lat,p.lng]);
       const pk=Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW);
@@ -896,7 +897,7 @@ function buildPlaces(){
 }
 
 /* Explorar: restaurantes reales de OpenStreetMap, descargados en vivo según la zona del mapa */
-const OVERPASS_MIN_ZOOM=14;          // solo se descargan al acercar el zoom (igual que aparecen los pines)
+const OVERPASS_MIN_ZOOM=13;          // solo se descargan al acercar el zoom (igual que aparecen los pines)
 const OVERPASS_CELL=0.04;            // rejilla ~4 km: cada celda se pide una sola vez
 const _osmCells=new Set();           // celdas ya solicitadas (para no repetir descargas)
 let _osmBusy=false;                  // una descarga a la vez
@@ -920,15 +921,18 @@ const OVERPASS_ENDPOINTS=[   // varios servidores públicos: si uno va saturado,
 ];
 async function overpassFetch(south,west,north,east,cellKeys){
   _osmBusy=true;
-  const q=`[out:json][timeout:20];(node["amenity"~"^(restaurant|cafe|fast_food|bar|pub|bakery|ice_cream)$"]["name"](${south},${west},${north},${east}););out body 400;`;
+  const q=`[out:json][timeout:20];(node["amenity"~"^(restaurant|cafe|fast_food|bar|pub|bakery|ice_cream)$"]["name"](${south},${west},${north},${east}););out body 900;`;
   try{
     let j=null;
     for(const url of OVERPASS_ENDPOINTS){      // intenta cada servidor hasta que uno responda bien
+      const ctrl=new AbortController();
+      const kill=setTimeout(()=>ctrl.abort(),15000);   // si un servidor tarda demasiado, se pasa al siguiente
       try{
-        const r=await fetch(url,{method:'POST',body:'data='+encodeURIComponent(q)});
+        const r=await fetch(url,{method:'POST',body:'data='+encodeURIComponent(q),signal:ctrl.signal});
         if(!r.ok)continue;
         j=await r.json();break;
-      }catch(_){/* prueba el siguiente servidor */}
+      }catch(_){/* servidor caído o lento -> prueba el siguiente */}
+      finally{clearTimeout(kill);}
     }
     if(!j)throw 0;
     let added=0;

@@ -5,7 +5,7 @@
      recargan una y otra vez. Se guardan en una caché aparte para no mezclarlas con la app.
    - Nunca se cachea una respuesta rota/incompleta (solo res.ok), para que una descarga
      a medias en móvil no quede grabada para siempre y rompa el catálogo. */
-const CACHE = 'saboreo-v12';
+const CACHE = 'saboreo-v13';
 const TILES = 'saboreo-tiles-v1';
 const SHELL = [
   './',
