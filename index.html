@@ -1594,7 +1594,9 @@ function openSettings(){
 function blobToDataURL(blob){return new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>res(null);fr.readAsDataURL(blob);});}
 async function exportData(){
   toast('Preparando copia…');
-  const recs=await DB.all(),places=[];
+  let recs;try{recs=await DB.all();}catch(e){recs=null;}
+  if(!recs||!recs.length)recs=[...saved.values()];   // si la BD local falla, exportamos lo que hay en memoria
+  const places=[];
   for(const r of recs){
     const dishes=[];
     for(const d of r.dishes){
@@ -1742,7 +1744,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v29 · 07-ago (guardar platos a prueba de fallos)',
+  BUILD:'v30 · 07-ago (todos los guardados a prueba de fallos)',
   client:null,user:null,_silent:true,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',_bootDone:false,
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -2118,7 +2120,17 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 /* enganchar los guardados locales para que suban a la nube automáticamente */
 (function(){
   const _put=DB.put.bind(DB);
-  DB.put=function(o){return _put(o).then(r=>{if(!SYNC._silent&&o&&o.id!=null)SYNC.schedulePlace(o.id);return r;});};
+  // DB.put NUNCA debe reventar: en iOS la conexión con IndexedDB se pierde a menudo y, si el
+  // guardado local fallaba, TODO el que hacía "await DB.put(...)" se cortaba sin avisar (no se
+  // guardaban precios, "he ido", tipo de cocina, etc.). Ahora: si el guardado local falla, los
+  // datos siguen en memoria (rec) y se fuerza igualmente la subida a la nube; el await continúa.
+  DB.put=function(o){
+    const sync=()=>{if(!SYNC._silent&&o&&o.id!=null)SYNC.schedulePlace(o.id);};
+    return _put(o).then(r=>{sync();return r;},err=>{
+      console.warn('[DB.put] guardado local falló; sigo en memoria y subo a la nube',err);
+      sync();
+    });
+  };
   const _sf=saveFavs;saveFavs=function(){_sf.apply(this,arguments);SYNC.schedulePrefs();};
   const _sv=saveVisited;saveVisited=function(){_sv.apply(this,arguments);SYNC.schedulePrefs();};
   const _sc=saveCkeyOverrides;saveCkeyOverrides=function(){_sc.apply(this,arguments);SYNC.schedulePrefs();};
