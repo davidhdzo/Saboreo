@@ -810,10 +810,25 @@ function refreshVisible(){
   if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
     hintWanted=false;applyHint();
     const inSet=mapMode==='eaten'?(p=>isVisited(p.id)):(p=>favorites.has(p.id));
-    PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine)).forEach(p=>addMarker(p,true));
+    const set=PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine));
+    const c=map.getCenter();
+    set.sort((a,b)=>dist2(a,c)-dist2(b,c));   // los del centro reclaman su nombre primero
+    // reparte los nombres evitando que se pisen (mismo criterio que en Explorar)
+    const placed=[];
+    const fits=(pt,name)=>{
+      const w=Math.min(190,name.length*6.6+16);
+      const box={x1:pt.x-w/2-3,y1:pt.y-31,x2:pt.x+w/2+3,y2:pt.y-7};
+      if(placed.some(bx=>!(box.x2<bx.x1||box.x1>bx.x2||box.y2<bx.y1||box.y1>bx.y2)))return false;
+      placed.push(box);return true;
+    };
+    set.forEach(p=>{
+      const pt=map.latLngToContainerPoint([p.lat,p.lng]);
+      addMarker(p,fits(pt,p.name));   // el pin siempre; el nombre solo si no se solapa
+    });
     pruneMarkers();return;
   }
   const b=map.getBounds(),c=map.getCenter();
+  overpassMaybeFetch();                                  // trae restaurantes reales de OpenStreetMap de la zona visible
   const filtered=!!activeCuisine;                        // si hay filtro de cocina, mostramos esos sitios a cualquier zoom
   let vis=PLACES.filter(p=>{
     if(!b.contains([p.lat,p.lng]))return false;
@@ -878,6 +893,61 @@ function buildPlaces(){
     const p={id:d.i,name:d.n,cat:d.c||'restaurante',addr:d.a||'España',lat:d.y,lng:d.x,custom:false,ckey:cuisineKey(d.c)};
     known.set(p.id,p);PLACES.push(p);
   });
+}
+
+/* Explorar: restaurantes reales de OpenStreetMap, descargados en vivo según la zona del mapa */
+const OVERPASS_MIN_ZOOM=14;          // solo se descargan al acercar el zoom (igual que aparecen los pines)
+const OVERPASS_CELL=0.04;            // rejilla ~4 km: cada celda se pide una sola vez
+const _osmCells=new Set();           // celdas ya solicitadas (para no repetir descargas)
+let _osmBusy=false;                  // una descarga a la vez
+const OSM_CATS={restaurant:'restaurante',cafe:'cafetería',fast_food:'comida rápida',bar:'bar',pub:'bar',bakery:'panadería',ice_cream:'heladería'};
+function overpassMaybeFetch(){
+  if(mapMode!=='all'||_osmBusy)return;
+  if(map.getZoom()<OVERPASS_MIN_ZOOM)return;
+  const b=map.getBounds();
+  const y0=Math.floor(b.getSouth()/OVERPASS_CELL),y1=Math.floor(b.getNorth()/OVERPASS_CELL);
+  const x0=Math.floor(b.getWest()/OVERPASS_CELL),x1=Math.floor(b.getEast()/OVERPASS_CELL);
+  const need=[];
+  for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++){const k=yy+'_'+xx;if(!_osmCells.has(k))need.push(k);}
+  if(!need.length)return;
+  need.forEach(k=>_osmCells.add(k));   // marca optimista; si falla la descarga se liberan para reintentar
+  overpassFetch(b.getSouth(),b.getWest(),b.getNorth(),b.getEast(),need);
+}
+const OVERPASS_ENDPOINTS=[   // varios servidores públicos: si uno va saturado, se prueba el siguiente
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+];
+async function overpassFetch(south,west,north,east,cellKeys){
+  _osmBusy=true;
+  const q=`[out:json][timeout:20];(node["amenity"~"^(restaurant|cafe|fast_food|bar|pub|bakery|ice_cream)$"]["name"](${south},${west},${north},${east}););out body 400;`;
+  try{
+    let j=null;
+    for(const url of OVERPASS_ENDPOINTS){      // intenta cada servidor hasta que uno responda bien
+      try{
+        const r=await fetch(url,{method:'POST',body:'data='+encodeURIComponent(q)});
+        if(!r.ok)continue;
+        j=await r.json();break;
+      }catch(_){/* prueba el siguiente servidor */}
+    }
+    if(!j)throw 0;
+    let added=0;
+    for(const el of (j.elements||[])){
+      if(el.type!=='node'||!el.tags||!el.tags.name)continue;
+      const id='osm-'+el.id;
+      if(known.has(id))continue;
+      const am=el.tags.amenity;
+      const addr=el.tags['addr:street']
+        ?`${el.tags['addr:street']}${el.tags['addr:housenumber']?' '+el.tags['addr:housenumber']:''}${el.tags['addr:city']?', '+el.tags['addr:city']:''}`
+        :(el.tags['addr:city']||'España');
+      const p={id,name:el.tags.name,cat:OSM_CATS[am]||'restaurante',addr,lat:el.lat,lng:el.lon,custom:false,ckey:cuisineKey(el.tags.cuisine||am)};
+      known.set(id,p);PLACES.push(p);added++;
+    }
+    applyCkeyOverrides();
+    if(added)refreshVisible();          // vuelve a pintar ya con los nuevos (no re-descarga: las celdas están marcadas)
+  }catch(e){
+    cellKeys.forEach(k=>_osmCells.delete(k));   // libera las celdas para reintentar en el próximo movimiento
+  }finally{_osmBusy=false;}
 }
 
 /* panel */
