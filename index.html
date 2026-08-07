@@ -43,9 +43,6 @@
   /* pin con el logo de Saboreo para los sitios a los que has ido */
   .pin-logo{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--orange),var(--green));border:2px solid #fff;box-shadow:0 0 0 2px rgba(31,174,90,.22),0 2px 7px rgba(0,0,0,.32);display:grid;place-items:center}
   .pin-logo svg{width:15px;height:15px;display:block}
-  .pin-cluster{position:relative;width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--orange),var(--green));border:2.5px solid #fff;box-shadow:0 0 0 2px rgba(31,174,90,.22),0 3px 10px rgba(0,0,0,.35);display:grid;place-items:center;cursor:pointer}
-  .pin-cluster svg{width:16px;height:16px;display:block;opacity:.5}
-  .pin-cluster .cc{position:absolute;top:-7px;right:-7px;min-width:19px;height:19px;padding:0 4px;border-radius:10px;background:var(--blue);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 
   .leaflet-tooltip.lbl{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;
     box-shadow:var(--shadow-sm);color:var(--txt);font-size:11px;font-weight:600;padding:3px 8px;white-space:nowrap;backdrop-filter:blur(4px)}
@@ -759,21 +756,6 @@ function pruneMarkers(){
     if(!_seenMarkers.has(id)){markerLayer.removeLayer(m);markers.delete(id);}
   }
 }
-// ---- agrupación de "he ido" muy apilados en una burbuja con el número; se desdobla al acercarte ----
-const CLUSTER_CELL=54;   // px en pantalla: dos "he ido" más cerca que esto se juntan en un cluster
-function makeClusterIcon(n){return L.divIcon({className:'',html:`<div class="pin-cluster">${LOGO_SVG}<span class="cc">${n}</span></div>`,iconSize:[34,34],iconAnchor:[17,17]});}
-function addClusterMarker(key,items){
-  let lat=0,lng=0;for(const p of items){lat+=p.lat;lng+=p.lng;}lat/=items.length;lng/=items.length;
-  const id='C:'+key;let m=markers.get(id);
-  if(!m){m=L.marker([lat,lng],{icon:makeClusterIcon(items.length),keyboard:false,zIndexOffset:400});m.addTo(markerLayer);markers.set(id,m);m._cn=0;}
-  else m.setLatLng([lat,lng]);
-  if(m._cn!==items.length){m.setIcon(makeClusterIcon(items.length));m._cn=items.length;}
-  if(m._tt){m.unbindTooltip();m._tt=false;m._ttText=null;m._ttClass=null;}
-  m.off('click');m.on('click',e=>{L.DomEvent.stopPropagation(e);
-    const g=L.latLngBounds(items.map(p=>[p.lat,p.lng]));
-    map.fitBounds(g.pad(0.4),{maxZoom:18});});   // al pulsar el cluster: acerca hasta desdoblarlo
-  _seenMarkers.add(id);
-}
 // límites que abarcan TODOS los sitios a los que has ido (para encuadrarlos al abrir)
 function visitedBounds(){
   const pts=PLACES.filter(p=>isVisited(p.id)).map(p=>[p.lat,p.lng]);
@@ -828,12 +810,7 @@ function refreshVisible(){
   if(mapMode!=='all'){   // "He comido" o "Quiero ir": todos los del conjunto, a cualquier zoom
     hintWanted=false;applyHint();
     const inSet=mapMode==='eaten'?(p=>isVisited(p.id)):(p=>favorites.has(p.id));
-    const list=PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine));
-    if(mapMode==='eaten'){   // "He comido": los muy apilados se juntan en una burbuja con el número
-      const cg=new Map();
-      for(const p of list){const pt=map.latLngToContainerPoint([p.lat,p.lng]);const ck=Math.floor(pt.x/CLUSTER_CELL)+'_'+Math.floor(pt.y/CLUSTER_CELL);let arr=cg.get(ck);if(!arr){arr=[];cg.set(ck,arr);}arr.push(p);}
-      for(const [ck,arr] of cg){if(arr.length===1)addMarker(arr[0],true);else addClusterMarker(ck,arr);}
-    }else list.forEach(p=>addMarker(p,true));
+    PLACES.filter(p=>inSet(p)&&(!activeCuisine||p.ckey===activeCuisine)).forEach(p=>addMarker(p,true));
     pruneMarkers();return;
   }
   const b=map.getBounds(),c=map.getCenter();
@@ -869,28 +846,12 @@ function refreshVisible(){
     }
   }
 
-  // 1) los sitios a los que HAS IDO: siempre visibles. Los muy apilados se juntan en una burbuja
-  //    con el número, que se desdobla en pines sueltos a medida que te acercas.
-  {
-    const cg=new Map();   // celda de pantalla -> lista de "he ido" que caen ahí
-    for(const p of vis){
-      if(p.id===highlightId||!isVisited(p.id))continue;
-      const pt=map.latLngToContainerPoint([p.lat,p.lng]);
-      const ck=Math.floor(pt.x/CLUSTER_CELL)+'_'+Math.floor(pt.y/CLUSTER_CELL);
-      let arr=cg.get(ck);if(!arr){arr=[];cg.set(ck,arr);}arr.push(p);
-    }
-    for(const [ck,arr] of cg){
-      if(arr.length===1){
-        const p=arr[0],pt=map.latLngToContainerPoint([p.lat,p.lng]);
-        pinCells.add(Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW));
-        addMarker(p,tryLabel(p,pt,false));
-      }else{
-        addClusterMarker(ck,arr);
-        let lat=0,lng=0;for(const q of arr){lat+=q.lat;lng+=q.lng;}
-        const cpt=map.latLngToContainerPoint([lat/arr.length,lng/arr.length]);
-        pinCells.add(Math.floor(cpt.x/pinW)+'_'+Math.floor(cpt.y/pinW));   // reserva la celda: el "resto" no pisa el cluster
-      }
-    }
+  // 1) los sitios a los que HAS IDO: siempre visibles, a cualquier zoom (incluso con poco zoom)
+  for(const p of vis){
+    if(p.id===highlightId||!isVisited(p.id))continue;
+    const pt=map.latLngToContainerPoint([p.lat,p.lng]);
+    pinCells.add(Math.floor(pt.x/pinW)+'_'+Math.floor(pt.y/pinW));
+    addMarker(p,tryLabel(p,pt,false));
   }
 
   // 2) el RESTO de restaurantes: solo con suficiente zoom; van apareciendo al acercarte
@@ -1805,7 +1766,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v31 · 07-ago (encuadre a "he ido" al abrir + agrupación)',
+  BUILD:'v32 · 07-ago (encuadre a "he ido" al abrir, sin agrupar)',
   client:null,user:null,_silent:true,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',_bootDone:false,
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
