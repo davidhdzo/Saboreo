@@ -891,6 +891,7 @@ function openPanel(id){
   document.getElementById('panel').classList.add('open');
   document.body.classList.add('panel-open');
   closeOverlay();map.panTo([p.lat,p.lng]);
+  SYNC.fetchMissing(id);   // baja ya las fotos que le falten a este sitio, sin esperar a la sincronización de fondo
 }
 function closePanel(){document.getElementById('panel').classList.remove('open');document.body.classList.remove('panel-open');current=null;if(highlightId){highlightId=null;document.getElementById('map').classList.remove('searching');refreshVisible();}}
 function updateFavStar(id){const fs=document.getElementById('favStar');const on=favorites.has(id);fs.classList.toggle('on',on);fs.textContent=on?'★':'☆';}
@@ -1415,6 +1416,7 @@ function openRestViewer(){if(current)openRestFullscreen(current);}              
 function openRestFullscreen(id){                                                       // "Ver mis platos" -> pantalla completa directa
   const rec=saved.get(id);if(!rec||!rec.dishes.length)return;
   viewerMode='rest';viewerRestId=id;viewerCourse='all';renderViewer(0);
+  SYNC.fetchMissing(id);   // baja ya las fotos que falten mientras miras los platos
 }
 function openViewer(feed,start){viewerMode='feed';dishFeed=feed;renderViewer(start);}  // "Mis platos" global (menú)
 const COURSE_ORDER={entrante:0,plato:1,postre:2};
@@ -1766,7 +1768,7 @@ async function boot(){
 const SYNC={
   URL:'https://vioriwpflofxgscjgkqc.supabase.co',
   KEY:'sb_publishable_QphFy_lA_0BAd-wjM4WO7w_3Y6UH3yp',
-  BUILD:'v32 · 07-ago (encuadre a "he ido" al abrir, sin agrupar)',
+  BUILD:'v33 · 07-ago (fotos: descarga al abrir + reintentos)',
   client:null,user:null,_silent:true,_dirty:new Set(),_pt:0,_ppt:0,_poll:0,_state:'',_bootDone:false,
 
   k(n){return 'sb_'+n+'_'+(this.user?this.user.id:'anon');},
@@ -1948,12 +1950,12 @@ const SYNC={
     const worker=async()=>{
       while(mediaQueue.length){
         const {id,d}=mediaQueue.pop();
-        try{
-          const dl=await this.client.storage.from('media').download(this.user.id+'/'+id+'/'+d.mid);
-          if(dl.data){d.buf=await dl.data.arrayBuffer();if(!d.mtype)d.mtype=dl.data.type;}
-          else if(dl.error){this._mediaErr=dl.error.message||String(dl.error);console.warn('[sync] media download',this.user.id+'/'+id+'/'+d.mid,dl.error);}
-        }catch(e){this._mediaErr=String(e);console.warn('[sync] media',e);}
-        up.add(d.mid);touched.add(id);
+        const buf=await this.downloadMedia(id,d.mid);
+        if(buf){
+          this.applyMedia(id,d,buf.data,buf.type);   // escribe la foto en el objeto vivo de "saved" (por mid)
+          up.add(d.mid);                             // solo marcamos "ya la tengo" si de verdad se bajó
+          touched.add(id);
+        }
       }
     };
     await Promise.all(Array.from({length:Math.min(4,mediaQueue.length)},()=>worker()));
@@ -1966,6 +1968,52 @@ const SYNC={
     }
     let extra=this._mediaErr?' · aviso fotos: '+this._mediaErr:'';
     this.setState('Al día ✓'+extra);
+  },
+  // baja UN archivo de Storage con un par de reintentos (las redes móviles fallan a ratos)
+  async downloadMedia(id,mid){
+    if(!this.client||!this.user||!mid)return null;
+    for(let i=0;i<3;i++){
+      try{
+        const dl=await this.client.storage.from('media').download(this.user.id+'/'+id+'/'+mid);
+        if(dl.data)return {data:await dl.data.arrayBuffer(),type:dl.data.type};
+        if(dl.error){this._mediaErr=dl.error.message||String(dl.error);}
+      }catch(e){this._mediaErr=String(e);}
+      if(i<2)await new Promise(r=>setTimeout(r,600*(i+1)));
+    }
+    return null;
+  },
+  // guarda la foto ya bajada en el plato correcto DENTRO de "saved" (buscándolo por su mid),
+  // de forma que una sincronización que haya reemplazado el registro entremedias no la pierda.
+  applyMedia(id,d,buf,type){
+    if(buf){d.buf=buf;if(!d.mtype&&type)d.mtype=type;}
+    const rec=saved.get(id);if(!rec)return;
+    const live=rec.dishes.find(x=>x.mid===d.mid);
+    if(live&&live!==d){live.buf=buf;if(!live.mtype&&type)live.mtype=type;}
+  },
+  // descarga BAJO DEMANDA: al abrir un restaurante, baja ya las fotos que le falten a este
+  // dispositivo (en vez de esperar a la sincronización de fondo, que puede tardar o fallar).
+  async fetchMissing(id){
+    if(!this.user||!this.client||!navigator.onLine||this._bootDone===false)return;
+    const rec=saved.get(id);if(!rec)return;
+    if(!this._fetching)this._fetching=new Set();
+    if(this._fetching.has(id))return;
+    const need=rec.dishes.filter(d=>d.mid&&!dishHasMedia(d));
+    if(!need.length)return;
+    this._fetching.add(id);
+    const up=this.uploaded();let got=false;
+    try{
+      for(const d of need){
+        const buf=await this.downloadMedia(id,d.mid);
+        if(buf){this.applyMedia(id,d,buf.data,buf.type);up.add(d.mid);got=true;}
+      }
+    }finally{this._fetching.delete(id);}
+    if(got){
+      this.saveUploaded(up);
+      const cur=saved.get(id);
+      if(cur){this._silent=true;try{await DB.put(cur);}catch(e){}this._silent=false;}
+      if(current===id)renderDishes(id);
+      refreshViewerIfShowing(id);
+    }
   },
 
   /* ---- recuperación única de fotos "huérfanas" ----
